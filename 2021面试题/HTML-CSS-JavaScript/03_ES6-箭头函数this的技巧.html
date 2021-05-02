@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>03_ES6-箭头函数this的技巧</title>
+	</head>
+	<body>
+		<script>
+			// var x = 11
+			// var obj = {
+			// 	x: 22,
+			// 	say: () => {
+			// 		console.log(this.x)
+			// 	},
+			// }
+			// obj.say() // 11
+
+			var obj = {
+				birth: 2000,
+				getAge: function () {
+					var b = this.birth //2000
+					var fn = () => new Date().getFullYear() - this.birth //this指向obj对象
+                    console.log(b);
+					return fn()
+				},
+			}
+			console.log(obj.getAge()); //21
+		</script>
+	</body>
+</html>
