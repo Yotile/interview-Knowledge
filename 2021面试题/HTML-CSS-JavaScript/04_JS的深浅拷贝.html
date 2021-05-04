@@ -1,12 +1,72 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-</head>
-<body>
-    
-</body>
+	<head>
+		<meta charset="UTF-8" />
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>深浅拷贝</title>
+	</head>
+	<body>
+		<script>
+			// 赋值 
+			var person = {
+				name: "张三",
+				hobby: ["学习", ["看电影", "购物"], "跑步"],
+			}
+
+			// var person1 = person
+			// person1.name = "李四"
+			// person1.hobby[0] = "睡觉"
+			// console.log(person)
+			// console.log(person1)
+
+			// 赋值 end
+
+			//浅拷贝
+			
+			function shallowCopy(obj) {
+				var target = {}
+				for (var i in obj) {
+					if (obj.hasOwnProperty(i)) {
+						target[i] = obj[i]
+					}
+				}
+				return target
+			}
+
+			// var person1 = shallowCopy(person)
+
+			// person1.name = "李四"
+			// person1.hobby[0] = "睡觉"
+			// console.log(person)
+			// console.log(person1)
+
+			//浅拷贝 end
+
+			//深拷贝
+			
+			//用递归实现深拷贝
+			
+			function deepClone(obj) {
+				if(obj === null) return obj
+				if(obj instanceof Date) return new Date(obj)
+				if(obj instanceof RegExp) return new RegExp(obj)
+				if(typeof obj !== "object") return obj  //设置递归出口(终止条件)
+				var cloneObj = {}
+				for (var i in obj) {
+					if (obj.hasOwnProperty(i)) {
+						cloneObj[i] = deepClone(obj[i])
+					}
+				}
+				return cloneObj
+			}
+
+			var person1 = deepClone(person)
+			person1.name = "李四"
+			person1.hobby[0] = "睡觉"
+			console.log(person)
+			console.log(person1)
+
+		</script>
+	</body>
 </html>
