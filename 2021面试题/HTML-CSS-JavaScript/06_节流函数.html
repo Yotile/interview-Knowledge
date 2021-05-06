@@ -1,11 +1,45 @@
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>节流函数</title>
-</head>
-<body>
-    
-</body>
+	<head>
+		<meta charset="UTF-8" />
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>节流函数</title>
+	</head>
+
+	<body>
+		<button id="button">点击</button>
+		<script>
+			//这个函数目前是点击多少次就执行多少次
+			//并不是我们想要的  理想的是比如时间是1秒  这期间无论你点击了多少次,那也只执行一次
+
+			// function thro(func, wait) {
+			// 	let timerOur
+			// 	setTimeout(function () {
+			// 		if (!timerOur) {
+			// 			func()
+			// 		}
+			// 	}, wait)
+			// }
+			function thro(func, wait) {
+				//TimerOut  相当于在办理业务
+				let timerOur
+				return function () {    //用闭包存储
+					//如果timerOut有值就不执行
+					if (!timerOur) {
+						timerOur = setTimeout(function () {
+							func()
+							//timeOur变回初始值  (处理完当前业务,可接下一个)
+							timerOur = null
+						}, wait)
+					}
+				}
+			}
+				//测试--打个随机数出来看看
+				function handle() {
+					console.log(Math.random());
+				}
+
+				document.getElementById("button").onclick = thro(handle, 2000)
+		</script>
+	</body>
 </html>
