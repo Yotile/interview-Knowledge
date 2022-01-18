@@ -12,7 +12,7 @@ import { request } from '@/utils'
 export const silenceLogin = () => {
   return request({
     method: 'GET',
-    url: '/currencyLogin/login?REALUSERNAME=广州睿颢软件技术有限公司',
+    url: 'BASE_URL',
     // data 用来设置 POST 请求体
     // data, // data: data
   })
