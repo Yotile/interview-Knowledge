@@ -4,13 +4,13 @@
     "type": "split",
     "children": [
       {
-        "id": "8d76567db0d705b5",
+        "id": "cdcb8091eb6ff982",
         "type": "leaf",
         "state": {
           "type": "markdown",
           "state": {
             "file": "default/未命名.md",
-            "mode": "preview",
+            "mode": "source",
             "source": false
           }
         }
@@ -116,9 +116,10 @@
     "direction": "horizontal",
     "width": 330.272705078125
   },
-  "active": "8d76567db0d705b5",
+  "active": "cdcb8091eb6ff982",
   "lastOpenFiles": [
     "default/未命名.md",
+    "I am learning/前端 Frontend System/12.next-Vue 3.x/04_Vue3-认识组件化开发和Vue的开发模式.md",
     "2022-02-20.md",
     "看板/未命名看板.md",
     "Excalidraw/Drawing 2022-02-20 11.50.56.excalidraw.md",
