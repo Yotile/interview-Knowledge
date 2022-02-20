@@ -1,0 +1,122 @@
+{
+  "main": {
+    "id": "63f9fefe0c59779b",
+    "type": "split",
+    "children": [
+      {
+        "id": "8d76567db0d705b5",
+        "type": "leaf",
+        "state": {
+          "type": "empty",
+          "state": {}
+        }
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "c27630f67cba27f0",
+    "type": "split",
+    "children": [
+      {
+        "id": "16d9617312f87c63",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "cfc4f025c5c2c828",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {}
+            }
+          },
+          {
+            "id": "c1eaa7f234d6a05b",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 318.00000190734863
+  },
+  "right": {
+    "id": "d0a74a4d6e82c405",
+    "type": "split",
+    "children": [
+      {
+        "id": "7ac4b337fd91fcb1",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "fc2d00609751aaea",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": true,
+                "unlinkedCollapsed": true
+              }
+            }
+          },
+          {
+            "id": "26592badcd685168",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {}
+            }
+          },
+          {
+            "id": "61d94644b4d38850",
+            "type": "leaf",
+            "state": {
+              "type": "calendar",
+              "state": {}
+            }
+          },
+          {
+            "id": "2d94ecd296cf918e",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true
+              }
+            }
+          }
+        ],
+        "currentTab": 2
+      }
+    ],
+    "direction": "horizontal",
+    "width": 330.272705078125
+  },
+  "active": "8d76567db0d705b5",
+  "lastOpenFiles": [
+    "2022-02-20.md",
+    "default/未命名.md",
+    "看板/未命名看板.md",
+    "Excalidraw/Drawing 2022-02-20 11.50.56.excalidraw.md",
+    "I am learning/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
+    "I am learning/前端 Frontend System/12.next-Vue 3.x/12.next-Vue 3.x/200-学习空间 StudySpace/220-前端 Frontend System/12.next-Vue 3.x.md",
+    "I am learning/前端 Frontend System/12.next-Vue 3.x/12.next-Vue 3.x/200-学习空间 StudySpace/220-前端 Frontend System/12.next-Vue 3.x/00_Vue hooks.md"
+  ]
+}
