@@ -4,7 +4,7 @@
     "type": "split",
     "children": [
       {
-        "id": "cdcb8091eb6ff982",
+        "id": "cf77fcf250194e94",
         "type": "leaf",
         "state": {
           "type": "empty",
@@ -109,8 +109,9 @@
     "direction": "horizontal",
     "width": 330.272705078125
   },
-  "active": "cdcb8091eb6ff982",
+  "active": "cf77fcf250194e94",
   "lastOpenFiles": [
+    "I am learning/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
     "202202202323.md",
     "202202202322.md",
     "default/未命名.md",
@@ -118,7 +119,6 @@
     "2022-02-20.md",
     "看板/未命名看板.md",
     "Excalidraw/Drawing 2022-02-20 11.50.56.excalidraw.md",
-    "I am learning/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
     "I am learning/前端 Frontend System/12.next-Vue 3.x/12.next-Vue 3.x/200-学习空间 StudySpace/220-前端 Frontend System/12.next-Vue 3.x.md",
     "I am learning/前端 Frontend System/12.next-Vue 3.x/12.next-Vue 3.x/200-学习空间 StudySpace/220-前端 Frontend System/12.next-Vue 3.x/00_Vue hooks.md"
   ]
