@@ -1,5 +1,9 @@
 {
   "legacyEditor": false,
   "livePreview": true,
-  "showLineNumber": true
+  "showLineNumber": true,
+  "foldIndent": true,
+  "foldHeading": false,
+  "showFrontmatter": false,
+  "rightToLeft": false
 }
