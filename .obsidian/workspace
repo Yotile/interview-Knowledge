@@ -7,8 +7,12 @@
         "id": "cf77fcf250194e94",
         "type": "leaf",
         "state": {
-          "type": "empty",
-          "state": {}
+          "type": "markdown",
+          "state": {
+            "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
+            "mode": "source",
+            "source": false
+          }
         }
       }
     ],
@@ -65,6 +69,7 @@
             "state": {
               "type": "backlink",
               "state": {
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -80,7 +85,9 @@
             "type": "leaf",
             "state": {
               "type": "outline",
-              "state": {}
+              "state": {
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md"
+              }
             }
           },
           {
@@ -103,7 +110,7 @@
             }
           }
         ],
-        "currentTab": 2
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
@@ -111,6 +118,8 @@
   },
   "active": "cf77fcf250194e94",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
+    "knowledge accumulate/前端 Frontend System/06-JavaScript异步编程：Ajax和Promise/00-服务器分类及PHP入门.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
     "202202202323.md",
     "202202202322.md",
@@ -118,8 +127,6 @@
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/04_Vue3-认识组件化开发和Vue的开发模式.md",
     "2022-02-20.md",
     "看板/未命名看板.md",
-    "Excalidraw/Drawing 2022-02-20 11.50.56.excalidraw.md",
-    "I am learning/前端 Frontend System/12.next-Vue 3.x/12.next-Vue 3.x/200-学习空间 StudySpace/220-前端 Frontend System/12.next-Vue 3.x.md",
-    "I am learning/前端 Frontend System/12.next-Vue 3.x/12.next-Vue 3.x/200-学习空间 StudySpace/220-前端 Frontend System/12.next-Vue 3.x/00_Vue hooks.md"
+    "Excalidraw/Drawing 2022-02-20 11.50.56.excalidraw.md"
   ]
 }
