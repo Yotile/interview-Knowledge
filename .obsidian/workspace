@@ -9,8 +9,8 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md",
-            "mode": "source",
+            "file": "Interview/JavaScript/JavaScript.md",
+            "mode": "preview",
             "source": false
           }
         }
@@ -77,7 +77,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md",
+                "file": "Interview/JavaScript/JavaScript.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -94,7 +94,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md"
+                "file": "Interview/JavaScript/JavaScript.md"
               }
             }
           },
@@ -123,7 +123,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md",
+                "file": "Interview/JavaScript/JavaScript.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -138,6 +138,7 @@
   },
   "active": "cf77fcf250194e94",
   "lastOpenFiles": [
+    "Interview/JavaScript/JavaScript.md",
     "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md",
     "knowledge accumulate/前端 Frontend System/15-TypeScript/02_TypeScript 变量的定义.md",
     "knowledge accumulate/前端 Frontend System/15-TypeScript/01_TypeScript 安装使用.md",
@@ -146,7 +147,6 @@
     "knowledge accumulate/前端 Frontend System/06-JavaScript异步编程：Ajax和Promise/00-服务器分类及PHP入门.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
     "202202202323.md",
-    "202202202322.md",
-    "default/未命名.md"
+    "202202202322.md"
   ]
 }
