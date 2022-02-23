@@ -7,5 +7,7 @@
   "blue-topaz-theme@@magic-deep-color@@dark": "#2B819A",
   "blue-topaz-theme@@background-settings-workplace-background-image": false,
   "blue-topaz-theme@@background-image-settings-switch": false,
-  "blue-topaz-theme@@background-image-settings-markdown-page-options": "background-image-settings-markdown-page-sea-and-sky"
+  "blue-topaz-theme@@background-image-settings-markdown-page-options": "background-image-settings-markdown-page-sea-and-sky",
+  "minimal-advanced@@cursor": "default",
+  "minimal-advanced@@zoom-off": false
 }
