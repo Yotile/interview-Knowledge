@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
+            "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/03_Vue3的Options-API.md",
             "mode": "preview",
             "source": false
           }
@@ -40,7 +40,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "substring",
+                "query": "计算属性",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -78,7 +78,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/03_Vue3的Options-API.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -95,7 +95,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md"
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/03_Vue3的Options-API.md"
               }
             }
           },
@@ -124,7 +124,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/03_Vue3的Options-API.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -139,6 +139,8 @@
   },
   "active": "cf77fcf250194e94",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/03_Vue3的Options-API.md",
+    "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/02_Vue3基础-模板语法.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/前端 Frontend System/05-JavaScript基础：ES6语法/08-字符串、数组、对象的扩展.md",
@@ -146,8 +148,6 @@
     "Interview/JavaScript/JavaScript.md",
     "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md",
     "knowledge accumulate/前端 Frontend System/15-TypeScript/02_TypeScript 变量的定义.md",
-    "knowledge accumulate/前端 Frontend System/15-TypeScript/01_TypeScript 安装使用.md",
-    "knowledge accumulate/前端 Frontend System/14-小程序开发/14-小程序开发.md",
-    "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md"
+    "knowledge accumulate/前端 Frontend System/15-TypeScript/01_TypeScript 安装使用.md"
   ]
 }
