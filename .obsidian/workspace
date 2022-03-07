@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "Interview/JavaScript/JavaScript.md",
+            "file": "knowledge accumulate/前端工程化/项目搭建.md",
             "mode": "source",
             "source": false
           }
@@ -77,7 +77,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Interview/JavaScript/JavaScript.md",
+                "file": "knowledge accumulate/前端工程化/项目搭建.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -94,7 +94,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Interview/JavaScript/JavaScript.md"
+                "file": "knowledge accumulate/前端工程化/项目搭建.md"
               }
             }
           },
@@ -123,7 +123,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Interview/JavaScript/JavaScript.md",
+                "file": "knowledge accumulate/前端工程化/项目搭建.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -138,6 +138,7 @@
   },
   "active": "cf77fcf250194e94",
   "lastOpenFiles": [
+    "knowledge accumulate/前端工程化/项目搭建.md",
     "Interview/JavaScript/JavaScript.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/03_Vue3的Options-API.md",
@@ -146,7 +147,6 @@
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/前端 Frontend System/05-JavaScript基础：ES6语法/08-字符串、数组、对象的扩展.md",
     "knowledge accumulate/前端 Frontend System/12-Vue基础/05-Vue的举例：列表功能.md",
-    "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md",
-    "knowledge accumulate/前端 Frontend System/15-TypeScript/02_TypeScript 变量的定义.md"
+    "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md"
   ]
 }
