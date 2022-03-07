@@ -1,8 +1,7 @@
 {
   "blue-topaz-theme@@translucent-setting-panel": false,
   "blue-topaz-theme@@color-scheme-options": "color-scheme-options-lillimon-topaz",
-  "blue-topaz-theme@@magic-main-color@@light": "#E0803C",
-  "blue-topaz-theme@@magic-main-color@@dark": "#E8965C",
+  "blue-topaz-theme@@magic-main-color@@dark": "#E9E4E0",
   "blue-topaz-theme@@magic-deep-color@@light": "#1E5AA0",
   "blue-topaz-theme@@magic-deep-color@@dark": "#2B819A",
   "blue-topaz-theme@@background-settings-workplace-background-image": true,
