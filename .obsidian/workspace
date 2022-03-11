@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端工程化/项目搭建.md",
+            "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
             "mode": "source",
             "source": false
           }
@@ -77,7 +77,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端工程化/项目搭建.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -94,7 +94,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端工程化/项目搭建.md"
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md"
               }
             }
           },
@@ -123,7 +123,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端工程化/项目搭建.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -138,9 +138,9 @@
   },
   "active": "cf77fcf250194e94",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
     "knowledge accumulate/前端工程化/项目搭建.md",
     "Interview/JavaScript/JavaScript.md",
-    "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/03_Vue3的Options-API.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/02_Vue3基础-模板语法.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
