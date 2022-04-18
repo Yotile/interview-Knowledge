@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+            "file": "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md",
             "mode": "source",
             "source": false
           }
@@ -40,7 +40,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "map",
+                "query": "传值",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -78,7 +78,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+                "file": "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -95,7 +95,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
+                "file": "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md"
               }
             }
           },
@@ -124,7 +124,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+                "file": "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -139,6 +139,8 @@
   },
   "active": "3028956e6f8cfbcf",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md",
+    "knowledge accumulate/前端 Frontend System/13-React基础/02-JSX语法介绍.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/前端 Frontend System/13-React基础/09-AntD框架的upload组件上传图片时遇到的一些坑.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
@@ -146,8 +148,6 @@
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/03_Vue3的Options-API.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/01_Vue3 属性介绍.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/08_Vue3 Composition API.md",
-    "knowledge accumulate/前端工程化/项目搭建.md",
-    "Interview/JavaScript/JavaScript.md",
-    "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/02_Vue3基础-模板语法.md"
+    "knowledge accumulate/前端工程化/项目搭建.md"
   ]
 }
