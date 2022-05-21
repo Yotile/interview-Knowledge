@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
+            "file": "Interview/JavaScript/JavaScript.md",
             "mode": "source",
             "source": false
           }
@@ -40,7 +40,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "子传",
+                "query": "",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -57,8 +57,7 @@
               "state": {}
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "horizontal",
@@ -78,7 +77,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
+                "file": "Interview/JavaScript/JavaScript.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -95,7 +94,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md"
+                "file": "Interview/JavaScript/JavaScript.md"
               }
             }
           },
@@ -116,7 +115,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
+                "file": "Interview/JavaScript/JavaScript.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -139,6 +138,7 @@
   },
   "active": "3028956e6f8cfbcf",
   "lastOpenFiles": [
+    "Interview/JavaScript/JavaScript.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
     "knowledge accumulate/前端 Frontend System/06-JavaScript异步编程：Ajax和Promise/05-Promise入门详解.md",
     "knowledge accumulate/前端 Frontend System/16-前端性能优化/00-前端性能优化认知.md",
@@ -147,7 +147,6 @@
     "knowledge accumulate/前端 Frontend System/17-前端工程化/前端代码规范.md",
     "knowledge accumulate/前端 Frontend System/17-前端工程化/前端的几道题目.md",
     "knowledge accumulate/前端 Frontend System/17-前端工程化/数组的常见操作.md",
-    "knowledge accumulate/前端 Frontend System/17-前端工程化/Vue 前端代码风格指南.md",
-    "knowledge accumulate/前端 Frontend System/17-前端工程化/axios 封装.md"
+    "knowledge accumulate/前端 Frontend System/17-前端工程化/Vue 前端代码风格指南.md"
   ]
 }
