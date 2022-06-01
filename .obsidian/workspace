@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "Interview/JavaScript/JavaScript.md",
+            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
             "mode": "source",
             "source": false
           }
@@ -40,7 +40,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "forEach",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -57,7 +57,8 @@
               "state": {}
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "horizontal",
@@ -77,7 +78,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Interview/JavaScript/JavaScript.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -94,7 +95,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Interview/JavaScript/JavaScript.md"
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
               }
             }
           },
@@ -115,7 +116,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Interview/JavaScript/JavaScript.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -138,6 +139,7 @@
   },
   "active": "3028956e6f8cfbcf",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "Interview/JavaScript/JavaScript.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
     "knowledge accumulate/前端 Frontend System/06-JavaScript异步编程：Ajax和Promise/05-Promise入门详解.md",
@@ -146,7 +148,6 @@
     "knowledge accumulate/前端 Frontend System/17-前端工程化/前端常见专有名词.md",
     "knowledge accumulate/前端 Frontend System/17-前端工程化/前端代码规范.md",
     "knowledge accumulate/前端 Frontend System/17-前端工程化/前端的几道题目.md",
-    "knowledge accumulate/前端 Frontend System/17-前端工程化/数组的常见操作.md",
-    "knowledge accumulate/前端 Frontend System/17-前端工程化/Vue 前端代码风格指南.md"
+    "knowledge accumulate/前端 Frontend System/17-前端工程化/数组的常见操作.md"
   ]
 }
