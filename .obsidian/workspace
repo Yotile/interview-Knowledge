@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md",
+            "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
             "mode": "source",
             "source": false
           }
@@ -40,7 +40,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "emit",
+                "query": "子传",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -78,7 +78,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -95,7 +95,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md"
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md"
               }
             }
           },
@@ -116,7 +116,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -139,12 +139,12 @@
   },
   "active": "3028956e6f8cfbcf",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md",
     "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
     "knowledge accumulate/前端 Frontend System/24-服务器学习/项目搭建.md",
     "knowledge accumulate/前端 Frontend System/24-服务器学习/项目打包和自动化部署.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/38-client(可视区)相关属性.md",
-    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/07-typeof和数据类型转换.md",
     "Interview/JavaScript/JavaScript.md",
