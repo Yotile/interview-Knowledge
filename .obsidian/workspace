@@ -40,7 +40,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "子传",
+                "query": "非父子",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -137,7 +137,7 @@
     "direction": "horizontal",
     "width": 330.272705078125
   },
-  "active": "3028956e6f8cfbcf",
+  "active": "c1eaa7f234d6a05b",
   "lastOpenFiles": [
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/前端 Frontend System/12-Vue基础/12-Vue组件之间的传值.md",
