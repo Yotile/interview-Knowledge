@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/VS Code Remote-SSH 使用.md",
+            "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
             "mode": "source",
             "source": false
           }
@@ -40,7 +40,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "免密",
+                "query": "子传",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -78,7 +78,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/VS Code Remote-SSH 使用.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -95,7 +95,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/VS Code Remote-SSH 使用.md"
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md"
               }
             }
           },
@@ -116,7 +116,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/VS Code Remote-SSH 使用.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/05_Vue3 组件化开发.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
