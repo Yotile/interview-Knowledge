@@ -83,6 +83,8 @@ Host devtint
 ## 免密登录
 
 ```shell
+# 本地生成密钥公钥
+ssh-keygen -t rsa -b 4096 -C "key@tintjs.com"
 # 将公钥内容(本地 id_rsa.pub)写入文件中
 
 .ssh/authorized_keys
@@ -90,8 +92,8 @@ Host devtint
 
 # 权限
 
-chmod 600 authorized_keys
-
+# chmod 600 authorized_keys
+chmod 600 ~/.ssh/authorized_keys
 ```
 
 　　
