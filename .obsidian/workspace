@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/22-call、apply 和 bind.md",
+            "file": "knowledge accumulate/前端 Frontend System/16-前端性能优化/02-浏览器渲染机制.md",
             "mode": "source",
             "source": false
           }
@@ -77,7 +77,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/22-call、apply 和 bind.md",
+                "file": "knowledge accumulate/前端 Frontend System/16-前端性能优化/02-浏览器渲染机制.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -94,7 +94,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/22-call、apply 和 bind.md"
+                "file": "knowledge accumulate/前端 Frontend System/16-前端性能优化/02-浏览器渲染机制.md"
               }
             }
           },
@@ -115,7 +115,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/22-call、apply 和 bind.md",
+                "file": "knowledge accumulate/前端 Frontend System/16-前端性能优化/02-浏览器渲染机制.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -138,15 +138,15 @@
   },
   "active": "3d1504c4c1444bb9",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md",
+    "Interview/2021面试题/HTML-CSS-JavaScript/02_JS-this.md",
+    "knowledge accumulate/前端 Frontend System/17-前端工程化/前端常见专有名词.md",
+    "knowledge accumulate/前端 Frontend System/21-Flutter 移动端跨平台/21-Flutter 移动端跨平台.md",
+    "knowledge accumulate/前端 Frontend System/03-CSS进阶/CSS文章推荐.md",
+    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/22-call、apply 和 bind.md",
     "knowledge accumulate/前端 Frontend System/18-前端综合/ajax相关.md",
     "knowledge accumulate/前端 Frontend System/13-React基础/01-React介绍.md",
     "knowledge accumulate/前端 Frontend System/16-前端性能优化/lazyload&防抖动和节流阀.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md",
-    "knowledge accumulate/前端 Frontend System/20-数据结构及算法/20-数据结构及算法.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/01_Vue3 属性介绍.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/11_Vuex 状态管理（v4.x）.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/Vue3 源码简单学习.md"
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md"
   ]
 }
