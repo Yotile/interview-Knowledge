@@ -4,11 +4,15 @@
     "type": "split",
     "children": [
       {
-        "id": "a95e281389bf6eed",
+        "id": "3d1504c4c1444bb9",
         "type": "leaf",
         "state": {
-          "type": "empty",
-          "state": {}
+          "type": "markdown",
+          "state": {
+            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/22-call、apply 和 bind.md",
+            "mode": "source",
+            "source": false
+          }
         }
       }
     ],
@@ -73,6 +77,7 @@
             "state": {
               "type": "backlink",
               "state": {
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/22-call、apply 和 bind.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -88,7 +93,9 @@
             "type": "leaf",
             "state": {
               "type": "outline",
-              "state": {}
+              "state": {
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/22-call、apply 和 bind.md"
+              }
             }
           },
           {
@@ -108,6 +115,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/22-call、apply 和 bind.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -128,17 +136,17 @@
     "direction": "horizontal",
     "width": 330.272705078125
   },
-  "active": "cfc4f025c5c2c828",
+  "active": "3d1504c4c1444bb9",
   "lastOpenFiles": [
-    "202209011451.md",
-    "knowledge accumulate/前端 Frontend System/devtint-Fix-解决方案积累/Axios/拦截请求实现全局Loading.md",
-    "knowledge accumulate/前端 Frontend System/devtint-Fix-解决方案积累/Axios/序列化post请求参数.md",
-    "knowledge accumulate/前端 Frontend System/18-前端综合/前端开发积累.md",
-    "knowledge accumulate/前端 Frontend System/12-Vue基础/06-自定义过滤器：时间格式化举例.md",
-    "202209051427.md",
-    "Excalidraw/Drawing 2022-09-05 14.26.00.excalidraw.md",
-    "knowledge accumulate/前端 Frontend System/12.next-Vue 3.x/03_Vue3的Options-API.md",
-    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
-    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/27-对象的基本操作.md"
+    "knowledge accumulate/前端 Frontend System/18-前端综合/ajax相关.md",
+    "knowledge accumulate/前端 Frontend System/13-React基础/01-React介绍.md",
+    "knowledge accumulate/前端 Frontend System/16-前端性能优化/lazyload&防抖动和节流阀.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md",
+    "knowledge accumulate/前端 Frontend System/20-数据结构及算法/20-数据结构及算法.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/01_Vue3 属性介绍.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/11_Vuex 状态管理（v4.x）.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/Vue3 源码简单学习.md"
   ]
 }

@@ -8,5 +8,9 @@
   "rightToLeft": false,
   "newFileLocation": "current",
   "showUnsupportedFiles": true,
-  "attachmentFolderPath": "./attachments"
+  "attachmentFolderPath": "./attachments",
+  "alwaysUpdateLinks": true,
+  "readableLineLength": false,
+  "strictLineBreaks": false,
+  "spellcheck": false
 }
