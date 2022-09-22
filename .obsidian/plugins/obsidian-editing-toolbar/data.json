@@ -1,5 +1,5 @@
 {
-  "aestheticStyle": "glass",
+  "aestheticStyle": "tiny",
   "positionStyle": "fixed",
   "menuCommands": [
     {
@@ -182,8 +182,8 @@
   "shouldShowMenuOnSelect": false,
   "cMenuVisibility": true,
   "cMenuBottomValue": 4.25,
-  "cMenuNumRows": 18,
+  "cMenuNumRows": 15,
   "cMenuWidth": 548,
   "cMenuFontColor": "#2DC26B",
-  "cMenuBackgroundColor": "#d3f8b6"
+  "cMenuBackgroundColor": "#ff4d4f"
 }

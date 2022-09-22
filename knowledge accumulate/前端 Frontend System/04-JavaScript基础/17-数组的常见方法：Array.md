@@ -19,6 +19,7 @@ publish: true
 | Array.of(value1, value2, value3) | 创建数组：将**一系列值**转换成数组 |      |
 
 　　注意，获取数组的长度是用 `length` 属性，不是方法。关于 `length` 属性，详见上一篇文章。["获取数组的长度"](siyuan://blocks/20210805093548-xyn5d6v)
+　　
 
 ### 数组元素的添加和删除
 
