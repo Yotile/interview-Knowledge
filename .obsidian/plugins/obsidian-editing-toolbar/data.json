@@ -1,6 +1,6 @@
 {
-  "aestheticStyle": "default",
-  "positionStyle": "top",
+  "aestheticStyle": "glass",
+  "positionStyle": "fixed",
   "menuCommands": [
     {
       "id": "obsidian-editing-toolbar:editor-undo",
@@ -182,7 +182,7 @@
   "shouldShowMenuOnSelect": false,
   "cMenuVisibility": true,
   "cMenuBottomValue": 4.25,
-  "cMenuNumRows": 12,
+  "cMenuNumRows": 18,
   "cMenuWidth": 548,
   "cMenuFontColor": "#2DC26B",
   "cMenuBackgroundColor": "#d3f8b6"
