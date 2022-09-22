@@ -4,7 +4,7 @@
   "showLineNumber": true,
   "foldIndent": true,
   "foldHeading": false,
-  "showFrontmatter": false,
+  "showFrontmatter": true,
   "rightToLeft": false,
   "newFileLocation": "current",
   "showUnsupportedFiles": true,
