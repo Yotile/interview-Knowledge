@@ -4,12 +4,12 @@
     "type": "split",
     "children": [
       {
-        "id": "3d1504c4c1444bb9",
+        "id": "dff22a947d90ee2a",
         "type": "leaf",
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
+            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
             "mode": "source",
             "source": false
           }
@@ -40,7 +40,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "inj",
+                "query": "",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -57,8 +57,7 @@
               "state": {}
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "horizontal",
@@ -78,7 +77,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -95,7 +94,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md"
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
               }
             }
           },
@@ -116,7 +115,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -137,8 +136,9 @@
     "direction": "horizontal",
     "width": 330.272705078125
   },
-  "active": "3d1504c4c1444bb9",
+  "active": "dff22a947d90ee2a",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/前端 Frontend System/02-CSS基础/13-CSS3属性：Flex布局图文详解.md",
     "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
@@ -147,7 +147,6 @@
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md",
     "Interview/2021面试题/HTML-CSS-JavaScript/02_JS-this.md",
     "knowledge accumulate/前端 Frontend System/17-前端工程化/前端常见专有名词.md",
-    "knowledge accumulate/前端 Frontend System/21-Flutter 移动端跨平台/21-Flutter 移动端跨平台.md",
-    "knowledge accumulate/前端 Frontend System/03-CSS进阶/CSS文章推荐.md"
+    "knowledge accumulate/前端 Frontend System/21-Flutter 移动端跨平台/21-Flutter 移动端跨平台.md"
   ]
 }
