@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+            "file": "202209241625.md",
             "mode": "source",
             "source": false
           }
@@ -77,7 +77,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+                "file": "202209241625.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -94,7 +94,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
+                "file": "202209241625.md"
               }
             }
           },
@@ -115,7 +115,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+                "file": "202209241625.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -138,6 +138,8 @@
   },
   "active": "69b1b3a071726c91",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/00-前端工具/02-Git的使用.md",
+    "202209241625.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/01-JS简介.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
@@ -145,8 +147,6 @@
     "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/49-Zepto入门.md",
     "knowledge accumulate/前端 Frontend System/16-前端性能优化/02-浏览器渲染机制.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md",
-    "Interview/2021面试题/HTML-CSS-JavaScript/02_JS-this.md",
-    "knowledge accumulate/前端 Frontend System/17-前端工程化/前端常见专有名词.md"
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md"
   ]
 }

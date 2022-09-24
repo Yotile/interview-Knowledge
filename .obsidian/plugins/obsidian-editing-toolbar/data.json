@@ -1,6 +1,6 @@
 {
   "aestheticStyle": "tiny",
-  "positionStyle": "fixed",
+  "positionStyle": "top",
   "menuCommands": [
     {
       "id": "obsidian-editing-toolbar:editor-undo",

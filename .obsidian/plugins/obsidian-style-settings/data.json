@@ -26,5 +26,12 @@
   "blue-topaz-theme@@background-settings-workplace-theme-dark": "background-settings-workplace-theme-dark-custom-option",
   "blue-topaz-theme@@background-settings-workplace-theme-dark-custom": "url(\"http://res.tintjs.com/img/荧魈.jpg\")",
   "blue-topaz-theme@@blur-depth": 10,
-  "blue-topaz-theme@@whole-code-wrap": true
+  "blue-topaz-theme@@whole-code-wrap": true,
+  "things-style@@minimal-icons-off": false,
+  "things-style@@full-file-names": false,
+  "things-style@@links-int-on": true,
+  "things-style@@links-ext-on": true,
+  "things-style@@default-font-color": false,
+  "things-style@@accent-h": 255,
+  "things-style@@floating-button-off": false
 }
