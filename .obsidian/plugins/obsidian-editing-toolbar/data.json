@@ -178,7 +178,7 @@
       "icon": "remix-SplitCellsHorizontal"
     }
   ],
-  "appendMethod": "workspace",
+  "appendMethod": "body",
   "shouldShowMenuOnSelect": false,
   "cMenuVisibility": true,
   "cMenuBottomValue": 4.25,
