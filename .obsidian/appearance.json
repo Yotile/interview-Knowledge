@@ -1,6 +1,6 @@
 {
   "baseFontSize": 14,
-  "cssTheme": "Deep Work",
-  "translucency": true,
+  "cssTheme": "Things",
+  "translucency": false,
   "theme": "moonstone"
 }
