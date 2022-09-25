@@ -9,8 +9,8 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
-            "mode": "source",
+            "file": "Template/彩色时钟.md",
+            "mode": "preview",
             "source": false
           }
         }
@@ -25,6 +25,7 @@
       {
         "id": "16d9617312f87c63",
         "type": "tabs",
+        "dimension": 69.71496437054631,
         "children": [
           {
             "id": "cfc4f025c5c2c828",
@@ -56,7 +57,14 @@
               "type": "starred",
               "state": {}
             }
-          },
+          }
+        ]
+      },
+      {
+        "id": "0772bdafdf4dcaa6",
+        "type": "tabs",
+        "dimension": 30.28503562945368,
+        "children": [
           {
             "id": "751705b49af648cb",
             "type": "leaf",
@@ -69,7 +77,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 318.00000190734863
+    "width": 291
   },
   "right": {
     "id": "d0a74a4d6e82c405",
@@ -85,7 +93,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+                "file": "Template/彩色时钟.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -102,7 +110,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
+                "file": "Template/彩色时钟.md"
               }
             }
           },
@@ -123,7 +131,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+                "file": "Template/彩色时钟.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -142,14 +150,14 @@
       }
     ],
     "direction": "horizontal",
-    "width": 330.272705078125
+    "width": 291.5
   },
-  "active": "cfc4f025c5c2c828",
+  "active": "69b1b3a071726c91",
   "lastOpenFiles": [
-    "template/彩色时钟.md",
-    "template/🎵Music.md",
-    "template/home.md",
+    "Template/🎵Music.md",
+    "Template/彩色时钟.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+    "Template/home.md",
     "202209241625.md",
     "knowledge accumulate/前端 Frontend System/00-前端工具/04-Sublime Text在前端中的使用.md",
     "knowledge accumulate/前端 Frontend System/00-前端工具/02-Git的使用.md",
