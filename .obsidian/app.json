@@ -3,7 +3,7 @@
   "livePreview": true,
   "showLineNumber": true,
   "foldIndent": true,
-  "foldHeading": false,
+  "foldHeading": true,
   "showFrontmatter": true,
   "rightToLeft": false,
   "newFileLocation": "current",
