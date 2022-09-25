@@ -56,6 +56,14 @@
               "type": "starred",
               "state": {}
             }
+          },
+          {
+            "id": "751705b49af648cb",
+            "type": "leaf",
+            "state": {
+              "type": "recent-files",
+              "state": {}
+            }
           }
         ]
       }
@@ -136,17 +144,17 @@
     "direction": "horizontal",
     "width": 330.272705078125
   },
-  "active": "69b1b3a071726c91",
+  "active": "cfc4f025c5c2c828",
   "lastOpenFiles": [
-    "knowledge accumulate/前端 Frontend System/00-前端工具/04-Sublime Text在前端中的使用.md",
-    "202209241625.md",
-    "knowledge accumulate/前端 Frontend System/00-前端工具/02-Git的使用.md",
+    "template/彩色时钟.md",
+    "template/🎵Music.md",
+    "template/home.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+    "202209241625.md",
+    "knowledge accumulate/前端 Frontend System/00-前端工具/04-Sublime Text在前端中的使用.md",
+    "knowledge accumulate/前端 Frontend System/00-前端工具/02-Git的使用.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/01-JS简介.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
-    "knowledge accumulate/前端 Frontend System/02-CSS基础/13-CSS3属性：Flex布局图文详解.md",
-    "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
-    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/49-Zepto入门.md",
-    "knowledge accumulate/前端 Frontend System/16-前端性能优化/02-浏览器渲染机制.md"
+    "knowledge accumulate/前端 Frontend System/02-CSS基础/13-CSS3属性：Flex布局图文详解.md"
   ]
 }
