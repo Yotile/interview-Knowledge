@@ -134,7 +134,7 @@
   "checkbox@@check-text": false,
   "checkbox@@chck-pad": true,
   "checkbox@@chst-q": false,
-  "blue-topaz-theme@@blur-depth": 0,
+  "blue-topaz-theme@@blur-depth": 9,
   "blue-topaz-theme@@left-ribbon-style": "hide-left-ribbon",
   "blue-topaz-theme@@search-bar-style-option": "default-search-bar",
   "blue-topaz-theme@@transparent-setting-panel": false,
