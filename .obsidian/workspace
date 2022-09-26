@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "88-template/彩色时钟.md",
+            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
             "mode": "source",
             "source": false
           }
@@ -93,7 +93,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "88-template/彩色时钟.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -110,7 +110,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "88-template/彩色时钟.md"
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
               }
             }
           },
@@ -131,7 +131,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "88-template/彩色时钟.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -154,8 +154,8 @@
   },
   "active": "69b1b3a071726c91",
   "lastOpenFiles": [
-    "88-template/home.md",
     "88-template/彩色时钟.md",
+    "88-template/home.md",
     "88-template/🎵Music.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "202209241625.md",
