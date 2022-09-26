@@ -16,5 +16,6 @@
   "workspaces-plus",
   "obsidian-table-generator",
   "quickadd",
-  "ob-table-enhancer"
+  "ob-table-enhancer",
+  "obsidian-minimal-settings"
 ]
