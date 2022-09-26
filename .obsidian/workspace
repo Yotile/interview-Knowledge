@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
+            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
             "mode": "source",
             "source": false
           }
@@ -93,7 +93,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -110,7 +110,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md"
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
               }
             }
           },
@@ -131,7 +131,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -152,8 +152,10 @@
     "direction": "horizontal",
     "width": 288.8333435058594
   },
-  "active": "cfc4f025c5c2c828",
+  "active": "69b1b3a071726c91",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
+    "README.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "88-template/彩色时钟.md",
     "88-template/home.md",
@@ -161,8 +163,6 @@
     "202209241625.md",
     "knowledge accumulate/前端 Frontend System/00-前端工具/04-Sublime Text在前端中的使用.md",
     "knowledge accumulate/前端 Frontend System/00-前端工具/02-Git的使用.md",
-    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/01-JS简介.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
-    "knowledge accumulate/前端 Frontend System/02-CSS基础/13-CSS3属性：Flex布局图文详解.md"
+    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/01-JS简介.md"
   ]
 }
