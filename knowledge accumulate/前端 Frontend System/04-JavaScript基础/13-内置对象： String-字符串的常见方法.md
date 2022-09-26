@@ -32,8 +32,8 @@ publish: true
 | Function  | 函数构造器     |
 | Number    | 数值对象       |
 | Object    | 基础对象       |
-| RegExp    | 正则表达式对象 |
-| String    | 字符串对象     |
+|RegExp| 正则表达式对象 |
+|String| 字符串对象     |
 
 　　前面的几篇文章中，我们专门讲到了数组 Array。今天这篇文章，我们先来讲一下内置对象 Math。
 
