@@ -13,10 +13,10 @@ publish: true
 
 | 方法                             | 描述                                     | 备注 |
 | :--------------------------------- | :----------------------------------------- | :----- |
-| Array.isArray()                  | 判断是否为数组                           |      |
-| toString()                       | 将数组转换为字符串                       | <br />   |
-| Array.from(arrayLike)            | 将**伪数组**转化为**真数组** |      |
-| Array.of(value1, value2, value3) | 创建数组：将**一系列值**转换成数组 |      |
+|Array.isArray()|判断是否为数组|      |
+|toString()| 将数组转换为字符串                       | <br />   |
+|Array.from(arrayLike)| 将**伪数组**转化为**真数组** |      |
+|Array.of(value1, value2, value3)| 创建数组：将**一系列值**转换成数组 |      |
 
 　　注意，获取数组的长度是用 `length` 属性，不是方法。关于 `length` 属性，详见上一篇文章。["获取数组的长度"](siyuan://blocks/20210805093548-xyn5d6v)
 	　　
