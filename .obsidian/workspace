@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+            "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
             "mode": "source",
             "source": false
           }
@@ -25,6 +25,7 @@
       {
         "id": "16d9617312f87c63",
         "type": "tabs",
+        "dimension": 65.1567944250871,
         "children": [
           {
             "id": "cfc4f025c5c2c828",
@@ -62,6 +63,7 @@
       {
         "id": "a7435c5622b4aa9d",
         "type": "tabs",
+        "dimension": 34.84320557491289,
         "children": [
           {
             "id": "751705b49af648cb",
@@ -84,6 +86,7 @@
       {
         "id": "7ac4b337fd91fcb1",
         "type": "tabs",
+        "dimension": 37.51451800232288,
         "children": [
           {
             "id": "fc2d00609751aaea",
@@ -91,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -99,16 +102,6 @@
                 "searchQuery": "",
                 "backlinkCollapsed": true,
                 "unlinkedCollapsed": true
-              }
-            }
-          },
-          {
-            "id": "26592badcd685168",
-            "type": "leaf",
-            "state": {
-              "type": "outline",
-              "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
               }
             }
           },
@@ -129,7 +122,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
+                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -144,7 +137,24 @@
             }
           }
         ],
-        "currentTab": 1
+        "currentTab": 3
+      },
+      {
+        "id": "a28ef51add4098f7",
+        "type": "tabs",
+        "dimension": 62.48548199767712,
+        "children": [
+          {
+            "id": "26592badcd685168",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md"
+              }
+            }
+          }
+        ]
       }
     ],
     "direction": "horizontal",
@@ -152,9 +162,9 @@
   },
   "active": "69b1b3a071726c91",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/学科/02331 数据结构/02331 数据结构.md",
     "knowledge accumulate/学科/04735 数据库系统原理/04735 数据库系统原理.md",
-    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
     "README.md",
     "88-template/彩色时钟.md",
