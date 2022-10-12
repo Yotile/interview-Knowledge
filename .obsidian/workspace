@@ -9,7 +9,7 @@
         "state": {
           "type": "markdown",
           "state": {
-            "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
+            "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
             "mode": "source",
             "source": false
           }
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
+                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -122,7 +122,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
+                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -150,7 +150,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md"
+                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
               }
             }
           }
@@ -162,15 +162,15 @@
   },
   "active": "69b1b3a071726c91",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/24-服务器学习/项目搭建.md",
+    "knowledge accumulate/前端 Frontend System/24-服务器学习/提交代码到 GitHub 后，Jenkins 自动构建；.md",
+    "knowledge accumulate/前端 Frontend System/24-服务器学习/项目打包和自动化部署.md",
+    "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md",
     "knowledge accumulate/学科/02331 数据结构/02331 数据结构.md",
     "knowledge accumulate/学科/04735 数据库系统原理/04735 数据库系统原理.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
     "README.md",
-    "88-template/彩色时钟.md",
-    "88-template/home.md",
-    "88-template/🎵Music.md",
-    "202209241625.md",
-    "knowledge accumulate/前端 Frontend System/00-前端工具/04-Sublime Text在前端中的使用.md"
+    "88-template/彩色时钟.md"
   ]
 }

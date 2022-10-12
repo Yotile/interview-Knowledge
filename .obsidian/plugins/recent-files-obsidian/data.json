@@ -1,6 +1,22 @@
 {
   "recentFiles": [
     {
+      "basename": "云服务器中 ssh key 管理 与 github 的配置",
+      "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
+    },
+    {
+      "basename": "项目搭建",
+      "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/项目搭建.md"
+    },
+    {
+      "basename": "提交代码到 GitHub 后，Jenkins 自动构建；",
+      "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/提交代码到 GitHub 后，Jenkins 自动构建；.md"
+    },
+    {
+      "basename": "项目打包和自动化部署",
+      "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/项目打包和自动化部署.md"
+    },
+    {
       "basename": "vue组件函数已有默认回调参数时，传入新的值",
       "path": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md"
     },
