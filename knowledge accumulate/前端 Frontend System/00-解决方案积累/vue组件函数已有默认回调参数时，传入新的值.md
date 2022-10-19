@@ -1,5 +1,5 @@
 ## 仅有一个默认回调参数
-
+	
 >  $event  为默认回调参数
 ```js
 :fetch="querySearch($event, item)" 

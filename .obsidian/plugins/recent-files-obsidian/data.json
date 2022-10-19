@@ -1,12 +1,16 @@
 {
   "recentFiles": [
     {
-      "basename": "自考数据库系统原理串讲笔记",
-      "path": "knowledge accumulate/学科/04735 数据库系统原理/自考数据库系统原理串讲笔记.pdf"
+      "basename": "vue组件函数已有默认回调参数时，传入新的值",
+      "path": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md"
     },
     {
       "basename": "云服务器中 ssh key 管理 与 github 的配置",
       "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
+    },
+    {
+      "basename": "自考数据库系统原理串讲笔记",
+      "path": "knowledge accumulate/学科/04735 数据库系统原理/自考数据库系统原理串讲笔记.pdf"
     },
     {
       "basename": "项目搭建",
@@ -19,10 +23,6 @@
     {
       "basename": "项目打包和自动化部署",
       "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/项目打包和自动化部署.md"
-    },
-    {
-      "basename": "vue组件函数已有默认回调参数时，传入新的值",
-      "path": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md"
     },
     {
       "basename": "17-数组的常见方法：Array",

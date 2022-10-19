@@ -11,8 +11,12 @@
             "id": "8a591bc2fa8a6f1f",
             "type": "leaf",
             "state": {
-              "type": "empty",
-              "state": {}
+              "type": "markdown",
+              "state": {
+                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
+                "mode": "source",
+                "source": false
+              }
             }
           }
         ]
@@ -98,7 +102,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/学科/04735 数据库系统原理/自考数据库系统原理串讲笔记.pdf",
+                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -126,7 +130,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/学科/04735 数据库系统原理/自考数据库系统原理串讲笔记.pdf",
+                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -154,7 +158,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/学科/04735 数据库系统原理/自考数据库系统原理串讲笔记.pdf"
+                "file": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md"
               }
             }
           }
@@ -167,7 +171,7 @@
   "ribbon": {
     "mostRecentAction": ""
   },
-  "active": "cfc4f025c5c2c828",
+  "active": "8a591bc2fa8a6f1f",
   "lastOpenFiles": [
     "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
     "knowledge accumulate/前端 Frontend System/24-服务器学习/项目搭建.md",
