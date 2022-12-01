@@ -18,8 +18,19 @@
                 "source": false
               }
             }
+          },
+          {
+            "id": "216b6cc50995744c",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.0.0"
+              }
+            }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -171,7 +182,7 @@
   "ribbon": {
     "mostRecentAction": ""
   },
-  "active": "8a591bc2fa8a6f1f",
+  "active": "216b6cc50995744c",
   "lastOpenFiles": [
     "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
     "knowledge accumulate/前端 Frontend System/24-服务器学习/项目搭建.md",
