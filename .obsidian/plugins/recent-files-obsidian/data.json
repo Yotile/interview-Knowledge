@@ -1,6 +1,30 @@
 {
   "recentFiles": [
     {
+      "basename": "05_tsconfig.json文件",
+      "path": "knowledge accumulate/前端 Frontend System/15-TypeScript/05_tsconfig.json文件.md"
+    },
+    {
+      "basename": "04_类的使用",
+      "path": "knowledge accumulate/前端 Frontend System/15-TypeScript/04_类的使用.md"
+    },
+    {
+      "basename": "03_JS 以及 TS 的数据类型",
+      "path": "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md"
+    },
+    {
+      "basename": "02_TypeScript 变量的定义",
+      "path": "knowledge accumulate/前端 Frontend System/15-TypeScript/02_TypeScript 变量的定义.md"
+    },
+    {
+      "basename": "01_TypeScript 安装使用",
+      "path": "knowledge accumulate/前端 Frontend System/15-TypeScript/01_TypeScript 安装使用.md"
+    },
+    {
+      "basename": "20-预编译",
+      "path": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/20-预编译.md"
+    },
+    {
       "basename": "vue组件函数已有默认回调参数时，传入新的值",
       "path": "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md"
     },
