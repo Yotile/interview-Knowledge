@@ -1,6 +1,26 @@
 {
   "recentFiles": [
     {
+      "basename": "02_Vue3基础-模板语法",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/02_Vue3基础-模板语法.md"
+    },
+    {
+      "basename": "01_Vue3 属性介绍",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/01_Vue3 属性介绍.md"
+    },
+    {
+      "basename": "00_Vue3拓展知识",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识.md"
+    },
+    {
+      "basename": "00_Vue hooks",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md"
+    },
+    {
+      "basename": "03_Vue3的Options-API",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md"
+    },
+    {
       "basename": "云服务器中 ssh key 管理 与 github 的配置",
       "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
     },
