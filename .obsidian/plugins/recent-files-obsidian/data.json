@@ -1,6 +1,18 @@
 {
   "recentFiles": [
     {
+      "basename": "05_Vue3 组件化开发",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md"
+    },
+    {
+      "basename": "04_Vue3-认识组件化开发和Vue的开发模式",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/04_Vue3-认识组件化开发和Vue的开发模式.md"
+    },
+    {
+      "basename": "03_Vue3的Options-API",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md"
+    },
+    {
       "basename": "02_Vue3基础-模板语法",
       "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/02_Vue3基础-模板语法.md"
     },
@@ -15,10 +27,6 @@
     {
       "basename": "00_Vue hooks",
       "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md"
-    },
-    {
-      "basename": "03_Vue3的Options-API",
-      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md"
     },
     {
       "basename": "云服务器中 ssh key 管理 与 github 的配置",

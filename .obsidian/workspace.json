@@ -13,7 +13,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/02_Vue3基础-模板语法.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
                 "mode": "preview",
                 "source": false
               }
@@ -102,7 +102,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/02_Vue3基础-模板语法.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -130,7 +130,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/02_Vue3基础-模板语法.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -158,7 +158,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/02_Vue3基础-模板语法.md"
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md"
               }
             }
           }
@@ -170,15 +170,15 @@
   },
   "active": "f90a7e6b34c9fa35",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/04_Vue3-认识组件化开发和Vue的开发模式.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/02_Vue3基础-模板语法.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/01_Vue3 属性介绍.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md",
     "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
     "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md",
     "knowledge accumulate/前端 Frontend System/15-TypeScript/05_tsconfig.json文件.md",
-    "knowledge accumulate/前端 Frontend System/15-TypeScript/04_类的使用.md",
-    "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md"
+    "knowledge accumulate/前端 Frontend System/15-TypeScript/04_类的使用.md"
   ]
 }
