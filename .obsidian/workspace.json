@@ -18,8 +18,19 @@
                 "source": false
               }
             }
+          },
+          {
+            "id": "4fa3305713110d99",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.1.9"
+              }
+            }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -183,7 +194,7 @@
       "workspaces:管理工作区布局": false
     }
   },
-  "active": "f90a7e6b34c9fa35",
+  "active": "4fa3305713110d99",
   "lastOpenFiles": [
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/04_Vue3-认识组件化开发和Vue的开发模式.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md",
