@@ -13,24 +13,13 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md",
                 "mode": "preview",
                 "source": false
               }
             }
-          },
-          {
-            "id": "4fa3305713110d99",
-            "type": "leaf",
-            "state": {
-              "type": "release-notes",
-              "state": {
-                "currentVersion": "1.1.9"
-              }
-            }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "vertical"
@@ -113,7 +102,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -141,7 +130,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -169,7 +158,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md"
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md"
               }
             }
           }
@@ -194,17 +183,17 @@
       "workspaces:管理工作区布局": false
     }
   },
-  "active": "4fa3305713110d99",
+  "active": "f90a7e6b34c9fa35",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/07_Vue3 过渡&动画.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/06_Vue3 生命周期.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/04_Vue3-认识组件化开发和Vue的开发模式.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/03_Vue3的Options-API.md",
     "knowledge accumulate/前端 Frontend System/24-服务器学习/项目搭建.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/05_Vue3 组件化开发.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/02_Vue3基础-模板语法.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/01_Vue3 属性介绍.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md",
-    "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
-    "knowledge accumulate/前端 Frontend System/00-解决方案积累/vue组件函数已有默认回调参数时，传入新的值.md"
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue hooks.md"
   ]
 }

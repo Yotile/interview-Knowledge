@@ -12,5 +12,7 @@
   "alwaysUpdateLinks": true,
   "readableLineLength": false,
   "strictLineBreaks": false,
-  "spellcheck": false
+  "spellcheck": false,
+  "vimMode": false,
+  "showInlineTitle": true
 }
