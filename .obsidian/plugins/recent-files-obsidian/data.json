@@ -1,12 +1,24 @@
 {
   "recentFiles": [
     {
-      "basename": "08_Vue3 Composition API",
-      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md"
-    },
-    {
       "basename": "09_Vue3 高级语法",
       "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md"
+    },
+    {
+      "basename": "10_VueRouter 路由（v4.x）",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/10_VueRouter 路由（v4.x）.md"
+    },
+    {
+      "basename": "11_Vuex 状态管理（v4.x）",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/11_Vuex 状态管理（v4.x）.md"
+    },
+    {
+      "basename": "Vue3 源码简单学习",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/Vue3 源码简单学习.md"
+    },
+    {
+      "basename": "08_Vue3 Composition API",
+      "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md"
     },
     {
       "basename": "07_Vue3 过渡&动画",
