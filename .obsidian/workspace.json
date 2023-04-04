@@ -61,7 +61,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/historyApiFallback.md",
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md",
                 "mode": "source",
                 "source": false
               }
@@ -146,23 +146,6 @@
         "dimension": 37.51451800232288,
         "children": [
           {
-            "id": "fc2d00609751aaea",
-            "type": "leaf",
-            "state": {
-              "type": "backlink",
-              "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/historyApiFallback.md",
-                "collapseAll": false,
-                "extraContext": false,
-                "sortOrder": "alphabetical",
-                "showSearch": false,
-                "searchQuery": "",
-                "backlinkCollapsed": true,
-                "unlinkedCollapsed": true
-              }
-            }
-          },
-          {
             "id": "2d94ecd296cf918e",
             "type": "leaf",
             "state": {
@@ -170,18 +153,6 @@
               "state": {
                 "sortOrder": "frequency",
                 "useHierarchy": true
-              }
-            }
-          },
-          {
-            "id": "b66a8f17dde65022",
-            "type": "leaf",
-            "state": {
-              "type": "outgoing-link",
-              "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/historyApiFallback.md",
-                "linksCollapsed": false,
-                "unlinkedCollapsed": true
               }
             }
           },
@@ -194,7 +165,7 @@
             }
           }
         ],
-        "currentTab": 3
+        "currentTab": 1
       },
       {
         "id": "a28ef51add4098f7",
@@ -207,7 +178,36 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/historyApiFallback.md"
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md"
+              }
+            }
+          },
+          {
+            "id": "fc2d00609751aaea",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": true,
+                "unlinkedCollapsed": true
+              }
+            }
+          },
+          {
+            "id": "b66a8f17dde65022",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
               }
             }
           }
@@ -232,8 +232,10 @@
       "obsidian42-brat:BRAT": false
     }
   },
-  "active": "1c8cbb73b105149d",
+  "active": "c8bd717c433fbd6f",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/nextTick.md",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/historyApiFallback.md",
     "knowledge accumulate/学科/Plans/attachments/Pasted image 20230222234235.png",
     "knowledge accumulate/学科/Plans/2023 4月.md",
     "knowledge accumulate/学科/Plans/attachments/Pasted image 20230222234358.png",
