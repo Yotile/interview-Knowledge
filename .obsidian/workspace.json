@@ -8,18 +8,6 @@
         "type": "tabs",
         "children": [
           {
-            "id": "abe75c5593a5ce6b",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md",
-                "mode": "source",
-                "source": false
-              }
-            }
-          },
-          {
             "id": "8531aa3139f7f17d",
             "type": "leaf",
             "state": {
@@ -43,7 +31,8 @@
               }
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -109,7 +98,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 281.5
+    "width": 260
   },
   "right": {
     "id": "d0a74a4d6e82c405",
@@ -148,7 +137,7 @@
             }
           }
         ],
-        "currentTab": 2
+        "currentTab": 1
       },
       {
         "id": "a28ef51add4098f7",
@@ -211,21 +200,24 @@
       "audio-recorder:开始/结束录音": false,
       "workspaces:管理工作区布局": false,
       "obsidian-excalidraw-plugin:新建 Excalidraw 绘图": false,
-      "obsidian42-brat:BRAT": false,
+      "obsidian42-brat:BRAT": true,
       "notion-like-tables:Create Notion-Like table": false,
+      "cmdr:Kanban: 创建新看板": false,
       "obsidian-memos:Memos": false
     }
   },
-  "active": "abe75c5593a5ce6b",
+  "active": "1c8cbb73b105149d",
   "lastOpenFiles": [
-    "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
+    "Untitled 2.table",
+    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md",
+    "Untitled 1.table",
     "knowledge accumulate/学科/Plans/2023 4月.md",
+    "Excalidraw/Drawing 2023-04-05 11.21.19.excalidraw.md",
+    "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
     "未命名看板.md",
     "kanban",
     "2023-04-05.md",
-    "Untitled 2.table",
     "202209241625.md",
-    "Untitled 1.table",
     "未命名 2.canvas",
     "未命名 1.canvas",
     "Excalidraw/Drawing 2023-04-05 10.39.37.excalidraw.md",
@@ -233,7 +225,6 @@
     "Untitled 0.table",
     "Untitled.table",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/nextTick.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/historyApiFallback.md",
     "knowledge accumulate/学科/Plans/attachments/Pasted image 20230222234235.png",

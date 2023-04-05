@@ -1,0 +1,61 @@
+{
+  "confirmDeletion": true,
+  "showAddCommand": true,
+  "debug": false,
+  "editorMenu": [],
+  "fileMenu": [],
+  "leftRibbon": [
+    {
+      "id": "obsidian-kanban:create-new-kanban-board",
+      "icon": "align-start-horizontal",
+      "name": "Kanban: 创建新看板",
+      "mode": "any"
+    }
+  ],
+  "rightRibbon": [],
+  "titleBar": [],
+  "statusBar": [],
+  "pageHeader": [
+    {
+      "id": "obsidian-emoji-toolbar:emoji-picker:open-picker",
+      "icon": "smile",
+      "name": "Emoji Toolbar: Open emoji picker",
+      "mode": "any"
+    },
+    {
+      "id": "ob-table-enhancer:insert2x2table",
+      "icon": "table",
+      "name": "Table Enhancer: Insert 2x2 table",
+      "mode": "any"
+    },
+    {
+      "id": "obsidian-mind-map:app:markmap-preview",
+      "icon": "git-pull-request",
+      "name": "Mind Map: Preview the current note as a Mind Map",
+      "mode": "any"
+    },
+    {
+      "id": "obsidian-git:push2",
+      "icon": "upload-cloud",
+      "name": "Obsidian Git: Push",
+      "mode": "any"
+    }
+  ],
+  "macros": [],
+  "explorer": [],
+  "hide": {
+    "statusbar": [],
+    "leftRibbon": []
+  },
+  "spacing": 8,
+  "advancedToolbar": {
+    "rowHeight": 48,
+    "rowCount": 1,
+    "spacing": 0,
+    "buttonWidth": 48,
+    "columnLayout": false,
+    "mappedIcons": [],
+    "tooltips": false,
+    "heightOffset": 0
+  }
+}

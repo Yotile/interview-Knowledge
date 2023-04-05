@@ -5,12 +5,24 @@
       "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md"
     },
     {
-      "basename": "云服务器中 ssh key 管理 与 github 的配置",
-      "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
+      "basename": "Untitled 2",
+      "path": "Untitled 2.table"
+    },
+    {
+      "basename": "Untitled 1",
+      "path": "Untitled 1.table"
     },
     {
       "basename": "2023 4月",
       "path": "knowledge accumulate/学科/Plans/2023 4月.md"
+    },
+    {
+      "basename": "Drawing 2023-04-05 11.21.19.excalidraw",
+      "path": "Excalidraw/Drawing 2023-04-05 11.21.19.excalidraw.md"
+    },
+    {
+      "basename": "云服务器中 ssh key 管理 与 github 的配置",
+      "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
     },
     {
       "basename": "未命名看板",
@@ -187,10 +199,6 @@
     {
       "basename": "home",
       "path": "88-template/home.md"
-    },
-    {
-      "basename": "🎵Music",
-      "path": "88-template/🎵Music.md"
     }
   ],
   "omittedPaths": [],

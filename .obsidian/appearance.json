@@ -7,9 +7,9 @@
   "translucency": false,
   "monospaceFontFamily": "Source Code Pro",
   "enabledCssSnippets": [
-    "yaozhuwa@CSS",
     "网格背景",
     "段落首行缩进",
-    "extended-colorschemes"
+    "extended-colorschemes",
+    "yaozhuwa@CSS"
   ]
 }

@@ -7,7 +7,6 @@
   "url-into-selection",
   "obsidian-style-settings",
   "obsidian42-brat",
-  "obsidian-editing-toolbar",
   "recent-files-obsidian",
   "obsidian-react-components",
   "workspaces-plus",
@@ -20,5 +19,9 @@
   "notion-like-tables",
   "obsidian-kanban",
   "obsidian-memos",
-  "obsidian-quiet-outline"
+  "obsidian-quiet-outline",
+  "cmdr",
+  "file-explorer-note-count",
+  "editing-toolbar",
+  "obsidian-emoji-toolbar"
 ]
