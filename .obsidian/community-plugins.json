@@ -1,6 +1,5 @@
 [
   "calendar",
-  "obsidian-kanban",
   "obsidian-excalidraw-plugin",
   "obsidian-git",
   "obsidian-charts",
@@ -17,5 +16,9 @@
   "ob-table-enhancer",
   "obsidian-minimal-settings",
   "easy-typing-obsidian",
-  "mysnippets-plugin"
+  "mysnippets-plugin",
+  "notion-like-tables",
+  "obsidian-kanban",
+  "obsidian-memos",
+  "obsidian-quiet-outline"
 ]
