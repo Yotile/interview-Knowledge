@@ -4,35 +4,43 @@
     "type": "split",
     "children": [
       {
-        "id": "9a635c1195e2aec3",
-        "type": "tabs",
+        "id": "812cd9d12a1a54ed",
+        "type": "split",
         "children": [
           {
-            "id": "8531aa3139f7f17d",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "knowledge accumulate/学科/Plans/2023 4月.md",
-                "mode": "source",
-                "source": false
+            "id": "fde94e06f792929e",
+            "type": "tabs",
+            "children": [
+              {
+                "id": "e523104ee6263122",
+                "type": "leaf",
+                "state": {
+                  "type": "markdown",
+                  "state": {
+                    "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md",
+                    "mode": "source",
+                    "source": false
+                  }
+                }
               }
-            }
+            ]
           },
           {
-            "id": "1c8cbb73b105149d",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md",
-                "mode": "source",
-                "source": false
+            "id": "dc3a7597efc47c39",
+            "type": "tabs",
+            "children": [
+              {
+                "id": "fc2e27b104577238",
+                "type": "leaf",
+                "state": {
+                  "type": "mindmap",
+                  "state": {}
+                }
               }
-            }
+            ]
           }
         ],
-        "currentTab": 1
+        "direction": "horizontal"
       }
     ],
     "direction": "vertical"
@@ -107,25 +115,24 @@
       {
         "id": "7ac4b337fd91fcb1",
         "type": "tabs",
-        "dimension": 37.51451800232288,
+        "dimension": 52.44988864142539,
         "children": [
-          {
-            "id": "2d94ecd296cf918e",
-            "type": "leaf",
-            "state": {
-              "type": "tag",
-              "state": {
-                "sortOrder": "frequency",
-                "useHierarchy": true
-              }
-            }
-          },
           {
             "id": "c8bd717c433fbd6f",
             "type": "leaf",
             "state": {
               "type": "calendar",
               "state": {}
+            }
+          },
+          {
+            "id": "26592badcd685168",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md"
+              }
             }
           },
           {
@@ -142,15 +149,16 @@
       {
         "id": "a28ef51add4098f7",
         "type": "tabs",
-        "dimension": 62.48548199767711,
+        "dimension": 47.55011135857461,
         "children": [
           {
-            "id": "26592badcd685168",
+            "id": "2d94ecd296cf918e",
             "type": "leaf",
             "state": {
-              "type": "outline",
+              "type": "tag",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md"
+                "sortOrder": "frequency",
+                "useHierarchy": true
               }
             }
           },
@@ -206,8 +214,9 @@
       "obsidian-memos:Memos": false
     }
   },
-  "active": "1c8cbb73b105149d",
+  "active": "e523104ee6263122",
   "lastOpenFiles": [
+    "Untitled.table",
     "Untitled 2.table",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md",
     "Untitled 1.table",
@@ -223,7 +232,6 @@
     "Excalidraw/Drawing 2023-04-05 10.39.37.excalidraw.md",
     "未命名.canvas",
     "Untitled 0.table",
-    "Untitled.table",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/nextTick.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/historyApiFallback.md",

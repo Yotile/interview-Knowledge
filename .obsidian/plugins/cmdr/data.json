@@ -2,7 +2,14 @@
   "confirmDeletion": true,
   "showAddCommand": true,
   "debug": false,
-  "editorMenu": [],
+  "editorMenu": [
+    {
+      "id": "command-palette:open",
+      "icon": "command",
+      "name": "命令面板: 打开命令面板",
+      "mode": "any"
+    }
+  ],
   "fileMenu": [],
   "leftRibbon": [
     {
@@ -14,7 +21,26 @@
   ],
   "rightRibbon": [],
   "titleBar": [],
-  "statusBar": [],
+  "statusBar": [
+    {
+      "id": "workspace:split-horizontal",
+      "icon": "lucide-separator-horizontal",
+      "name": "上下分屏",
+      "mode": "any"
+    },
+    {
+      "id": "workspace:split-vertical",
+      "icon": "lucide-separator-vertical",
+      "name": "左右分屏",
+      "mode": "any"
+    },
+    {
+      "id": "workspace:toggle-stacked-tabs",
+      "icon": "lucide-layers",
+      "name": "堆叠/取消堆叠标签页",
+      "mode": "any"
+    }
+  ],
   "pageHeader": [
     {
       "id": "obsidian-emoji-toolbar:emoji-picker:open-picker",
@@ -30,8 +56,14 @@
     },
     {
       "id": "obsidian-mind-map:app:markmap-preview",
-      "icon": "git-pull-request",
+      "icon": "align-vertical-distribute-center",
       "name": "Mind Map: Preview the current note as a Mind Map",
+      "mode": "any"
+    },
+    {
+      "id": "obsidian-git:pull",
+      "icon": "download-cloud",
+      "name": "Obsidian Git: Pull",
       "mode": "any"
     },
     {
@@ -47,7 +79,7 @@
     "statusbar": [],
     "leftRibbon": []
   },
-  "spacing": 8,
+  "spacing": "8",
   "advancedToolbar": {
     "rowHeight": 48,
     "rowCount": 1,
