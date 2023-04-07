@@ -61,15 +61,9 @@
       "mode": "any"
     },
     {
-      "id": "obsidian-git:pull",
-      "icon": "download-cloud",
-      "name": "Obsidian Git: Pull",
-      "mode": "any"
-    },
-    {
-      "id": "obsidian-git:push2",
+      "id": "remotely-save:start-sync-dry-run",
       "icon": "upload-cloud",
-      "name": "Obsidian Git: Push",
+      "name": "Remotely Save: 开始同步（空跑模式）（start sync (dry run only)）",
       "mode": "any"
     }
   ],
