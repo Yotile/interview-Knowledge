@@ -16,13 +16,14 @@
   "obsidian-minimal-settings",
   "easy-typing-obsidian",
   "mysnippets-plugin",
-  "notion-like-tables",
   "obsidian-kanban",
   "obsidian-memos",
   "obsidian-quiet-outline",
   "cmdr",
-  "file-explorer-note-count",
   "editing-toolbar",
   "obsidian-emoji-toolbar",
-  "remotely-save"
+  "remotely-save",
+  "file-explorer-note-count",
+  "obsidian-editing-toolbar",
+  "various-complements"
 ]
