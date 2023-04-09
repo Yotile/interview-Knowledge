@@ -21,26 +21,7 @@
   ],
   "rightRibbon": [],
   "titleBar": [],
-  "statusBar": [
-    {
-      "id": "workspace:split-horizontal",
-      "icon": "lucide-separator-horizontal",
-      "name": "上下分屏",
-      "mode": "any"
-    },
-    {
-      "id": "workspace:split-vertical",
-      "icon": "lucide-separator-vertical",
-      "name": "左右分屏",
-      "mode": "any"
-    },
-    {
-      "id": "workspace:toggle-stacked-tabs",
-      "icon": "lucide-layers",
-      "name": "堆叠/取消堆叠标签页",
-      "mode": "any"
-    }
-  ],
+  "statusBar": [],
   "pageHeader": [
     {
       "id": "obsidian-emoji-toolbar:emoji-picker:open-picker",
