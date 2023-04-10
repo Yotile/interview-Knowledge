@@ -10,6 +10,17 @@
       "zoomLevel": 1,
       "forceIframe": false,
       "customCss": ""
+    },
+    {
+      "url": "https://v.flomoapp.com/mine",
+      "displayName": "Flomo",
+      "icon": "lightbulb",
+      "hideOnMobile": true,
+      "addRibbonIcon": true,
+      "openInCenter": true,
+      "zoomLevel": 1,
+      "forceIframe": true,
+      "customCss": ""
     }
   ],
   "padding": 5
