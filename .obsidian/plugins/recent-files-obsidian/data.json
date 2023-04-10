@@ -1,6 +1,10 @@
 {
   "recentFiles": [
     {
+      "basename": "17-数组的常见方法：Array",
+      "path": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
+    },
+    {
       "basename": "09_Vue3 高级语法",
       "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md"
     },
@@ -159,10 +163,6 @@
     {
       "basename": "提交代码到 GitHub 后，Jenkins 自动构建；",
       "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/提交代码到 GitHub 后，Jenkins 自动构建；.md"
-    },
-    {
-      "basename": "17-数组的常见方法：Array",
-      "path": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
     },
     {
       "basename": "02331 数据结构",

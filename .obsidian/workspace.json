@@ -19,7 +19,7 @@
             "id": "59c29d640afd6679",
             "type": "leaf",
             "state": {
-              "type": "custom-frames-open-flomo",
+              "type": "custom-frames-flomo",
               "state": {}
             }
           }
@@ -180,7 +180,6 @@
   "left-ribbon": {
     "hiddenItems": {
       "obsidian-custom-frames:Open Flomo": false,
-      "obsidian-weread-plugin:Weread": false,
       "obsidian-custom-frames:Open Notion": false,
       "switcher:打开快速切换": false,
       "canvas:新建白板": false,
@@ -193,6 +192,7 @@
       "workspaces:管理工作区布局": true,
       "obsidian-excalidraw-plugin:新建 Excalidraw 绘图": false,
       "obsidian42-brat:BRAT": true,
+      "obsidian-weread-plugin:Weread": false,
       "cmdr:Kanban: 创建新看板": false,
       "remotely-save:Remotely Save": false
     }
