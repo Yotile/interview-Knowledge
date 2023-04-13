@@ -8,14 +8,6 @@
         "type": "tabs",
         "children": [
           {
-            "id": "85cc09f263e76456",
-            "type": "leaf",
-            "state": {
-              "type": "custom-frames-notion",
-              "state": {}
-            }
-          },
-          {
             "id": "59c29d640afd6679",
             "type": "leaf",
             "state": {
@@ -23,8 +15,7 @@
               "state": {}
             }
           }
-        ],
-        "currentTab": 1
+        ]
       }
     ],
     "direction": "vertical"
@@ -125,8 +116,7 @@
               "state": {}
             }
           }
-        ],
-        "currentTab": 1
+        ]
       },
       {
         "id": "a28ef51add4098f7",
@@ -179,7 +169,7 @@
   },
   "left-ribbon": {
     "hiddenItems": {
-      "obsidian-custom-frames:Open Flomo": false,
+      "obsidian-custom-frames:Open open flomo": false,
       "obsidian-custom-frames:Open Notion": false,
       "switcher:打开快速切换": false,
       "canvas:新建白板": false,
@@ -197,7 +187,7 @@
       "remotely-save:Remotely Save": false
     }
   },
-  "active": "59c29d640afd6679",
+  "active": "c8bd717c433fbd6f",
   "lastOpenFiles": [
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md",
     "未命名 3.canvas",
