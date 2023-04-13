@@ -11,7 +11,7 @@
             "id": "59c29d640afd6679",
             "type": "leaf",
             "state": {
-              "type": "custom-frames-flomo",
+              "type": "custom-frames-open-flomo",
               "state": {}
             }
           }
@@ -187,7 +187,7 @@
       "remotely-save:Remotely Save": false
     }
   },
-  "active": "c8bd717c433fbd6f",
+  "active": "59c29d640afd6679",
   "lastOpenFiles": [
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md",
     "未命名 3.canvas",
