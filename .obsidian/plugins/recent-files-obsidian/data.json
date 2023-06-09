@@ -1,16 +1,20 @@
 {
   "recentFiles": [
     {
+      "basename": "02-Node.js的特点",
+      "path": "knowledge accumulate/前端 Frontend System/11-Node.js/02-Node.js的特点.md"
+    },
+    {
+      "basename": "02_TypeScript 变量的定义",
+      "path": "knowledge accumulate/前端 Frontend System/15-TypeScript/02_TypeScript 变量的定义.md"
+    },
+    {
       "basename": "17-数组的常见方法：Array",
       "path": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/17-数组的常见方法：Array.md"
     },
     {
       "basename": "09_Vue3 高级语法",
       "path": "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/09_Vue3 高级语法.md"
-    },
-    {
-      "basename": "未命名 3",
-      "path": "未命名 3.canvas"
     },
     {
       "basename": "2023 4月",
@@ -25,36 +29,12 @@
       "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
     },
     {
-      "basename": "未命名看板",
-      "path": "未命名看板.md"
-    },
-    {
-      "basename": "2023-04-05",
-      "path": "2023-04-05.md"
-    },
-    {
-      "basename": "202209241625",
-      "path": "202209241625.md"
-    },
-    {
-      "basename": "未命名 2",
-      "path": "未命名 2.canvas"
-    },
-    {
-      "basename": "未命名 1",
-      "path": "未命名 1.canvas"
-    },
-    {
       "basename": "Pasted image 20230222234235",
       "path": "knowledge accumulate/学科/Plans/attachments/Pasted image 20230222234235.png"
     },
     {
       "basename": "Drawing 2023-04-05 10.39.37.excalidraw",
       "path": "Excalidraw/Drawing 2023-04-05 10.39.37.excalidraw.md"
-    },
-    {
-      "basename": "未命名",
-      "path": "未命名.canvas"
     },
     {
       "basename": "08_Vue3 Composition API",
@@ -145,10 +125,6 @@
       "path": "knowledge accumulate/前端 Frontend System/15-TypeScript/03_JS 以及 TS 的数据类型.md"
     },
     {
-      "basename": "02_TypeScript 变量的定义",
-      "path": "knowledge accumulate/前端 Frontend System/15-TypeScript/02_TypeScript 变量的定义.md"
-    },
-    {
       "basename": "01_TypeScript 安装使用",
       "path": "knowledge accumulate/前端 Frontend System/15-TypeScript/01_TypeScript 安装使用.md"
     },
@@ -190,5 +166,6 @@
     }
   ],
   "omittedPaths": [],
-  "maxLength": null
+  "maxLength": null,
+  "openType": "tab"
 }

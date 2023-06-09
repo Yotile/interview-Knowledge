@@ -2901,11 +2901,17 @@ var import_diff_match_patch4 = __toESM(require_diff_match_patch(), 1);
 
 // src/deps.ts
 var import_obsidian = require("obsidian");
+var import_obsidian2 = require("obsidian");
+var normalizePath = import_obsidian2.normalizePath;
 
 // src/lib/src/types.ts
+var symbolFilePath = Symbol();
+var symbolFilePathWithPrefix = Symbol();
+var symbolId = Symbol();
 var MAX_DOC_SIZE_BIN = 102400;
 var VER = 10;
 var LEAF_WAIT_TIMEOUT = 9e4;
+var REPLICATION_BUSY_TIMEOUT = 3e6;
 var LOG_LEVEL = {
   DEBUG: -1,
   VERBOSE: 1,
@@ -2938,13 +2944,14 @@ var DEFAULT_SETTINGS = {
   syncOnFileOpen: false,
   encrypt: false,
   passphrase: "",
+  usePathObfuscation: false,
   doNotDeleteFolder: false,
   resolveConflictsByNewerFile: false,
   batchSave: false,
   deviceAndVaultName: "",
   usePluginSettings: false,
   showOwnPlugins: false,
-  showStatusOnEditor: false,
+  showStatusOnEditor: true,
   usePluginSync: false,
   autoSweepPlugins: false,
   autoSweepPluginsPeriodic: false,
@@ -2978,9 +2985,10 @@ var DEFAULT_SETTINGS = {
   encryptedPassphrase: "",
   encryptedCouchDBConnection: "",
   permitEmptyPassphrase: false,
-  useIndexedDBAdapter: false,
+  useIndexedDBAdapter: true,
   useTimeouts: false,
   writeLogToTheFile: false,
+  doNotPaceReplication: false,
   hashCacheMaxCount: 300,
   hashCacheMaxAmount: 50,
   concurrencyOfReadChunksOnline: 100,
@@ -2992,15 +3000,17 @@ var FLAGMD_REDFLAG2 = "redflag2.md";
 var FLAGMD_REDFLAG3 = "redflag3.md";
 var SYNCINFO_ID = "syncinfo";
 var SALT_OF_PASSPHRASE = "rHGMPtr6oWw7VSa3W3wpa8fT8U";
+var PREFIX_OBFUSCATED = "f:";
+var PREFIX_ENCRYPTED_CHUNK = "h:+";
 
 // src/types.ts
 var PERIODIC_PLUGIN_SWEEP = 60;
 var CHeader = "h:";
 var PSCHeader = "ps:";
-var PSCHeaderEnd = "ps;";
 var ICHeader = "i:";
 var ICHeaderEnd = "i;";
 var ICHeaderLength = ICHeader.length;
+var ICXHeader = "ix:";
 var FileWatchEventQueueMax = 10;
 var configURIBase = "obsidian://setuplivesync?settings=";
 
@@ -3148,8 +3158,150 @@ function Logger(message, level, key) {
 }
 logStore.intercept((e2) => e2.slice(Math.min(e2.length - 200, 0)));
 
-// src/lib/src/e2ee_v2.ts
-var import_crypto = require("crypto");
+// src/lib/src/LRUCache.ts
+var LRUCache = class {
+  constructor(maxCache, maxCacheLength, forwardOnly = false) {
+    this.cache = /* @__PURE__ */ new Map([]);
+    this.revCache = /* @__PURE__ */ new Map([]);
+    this.maxCache = 200;
+    this.maxCachedLength = 5e7;
+    this.cachedLength = 0;
+    this.enableReversed = true;
+    this.maxCache = maxCache || 200;
+    this.maxCachedLength = (maxCacheLength || 1) * 1e6;
+    this.enableReversed = !forwardOnly;
+    Logger(`Cache initialized ${this.maxCache} / ${this.maxCachedLength}`, LOG_LEVEL.VERBOSE);
+  }
+  has(key) {
+    return this.cache.has(key);
+  }
+  get(key) {
+    const v = this.cache.get(key);
+    if (v) {
+      this.cache.delete(key);
+      this.cache.set(key, v);
+      if (this.enableReversed) {
+        this.revCache.delete(v);
+        this.revCache.set(v, key);
+      }
+    }
+    return v;
+  }
+  revGet(value) {
+    const key = this.revCache.get(value);
+    if (value) {
+      this.cache.delete(key);
+      this.revCache.delete(value);
+      this.cache.set(key, value);
+      this.revCache.set(value, key);
+    }
+    return key;
+  }
+  set(key, value) {
+    this.cache.set(key, value);
+    if (this.enableReversed)
+      this.revCache.set(value, key);
+    this.cachedLength += `${value}`.length;
+    if (this.cache.size > this.maxCache || this.cachedLength > this.maxCachedLength) {
+      for (const [key2, value2] of this.cache) {
+        this.cache.delete(key2);
+        if (this.enableReversed)
+          this.revCache.delete(value2);
+        this.cachedLength -= `${value2}`.length;
+        if (this.cache.size <= this.maxCache && this.cachedLength <= this.maxCachedLength)
+          break;
+      }
+    } else {
+    }
+  }
+};
+
+// src/lib/src/semaphore.ts
+function makeUniqueString() {
+  const randomStrSrc = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const temp = [...Array(30)].map(() => Math.floor(Math.random() * randomStrSrc.length)).map((e2) => randomStrSrc[e2]).join("");
+  return `${Date.now()}-${temp}`;
+}
+function Semaphore(limit, onRelease) {
+  const _limit = limit;
+  let currentProcesses = 0;
+  let queue2 = [];
+  function execProcess() {
+    queue2 = queue2.filter((e2) => e2.state != "DONE");
+    for (const queueItem of queue2) {
+      if (queueItem.state != "NONE")
+        continue;
+      if (queueItem.quantity + currentProcesses > _limit) {
+        break;
+      }
+      queueItem.state = "RUNNING";
+      currentProcesses += queueItem.quantity;
+      if (queueItem == null ? void 0 : queueItem.timer) {
+        clearTimeout(queueItem.timer);
+      }
+      queueItem.notify(true);
+    }
+  }
+  function release(key) {
+    const finishedTask = queue2.find((e2) => e2.key == key);
+    if (!finishedTask) {
+      throw new Error("Missing locked semaphore!");
+    }
+    if (finishedTask.state == "RUNNING") {
+      currentProcesses -= finishedTask.quantity;
+    }
+    finishedTask.state = "DONE";
+    if (onRelease)
+      onRelease(queue2.filter((e2) => e2.state != "DONE"));
+    execProcess();
+  }
+  return {
+    _acquire(quantity, memo, timeout) {
+      const key = makeUniqueString();
+      if (_limit < quantity) {
+        throw Error("Too big quantity");
+      }
+      let notify = (_) => {
+      };
+      const semaphoreStopper = new Promise((res2) => {
+        notify = (result) => {
+          if (result) {
+            res2(() => {
+              release(key);
+            });
+          } else {
+            res2(false);
+          }
+        };
+      });
+      const notifier = {
+        key,
+        notify,
+        semaphoreStopper,
+        quantity,
+        memo,
+        state: "NONE"
+      };
+      if (timeout)
+        notifier.timer = setTimeout(() => {
+          release(key);
+          notify(false);
+        }, timeout);
+      queue2.push(notifier);
+      execProcess();
+      return semaphoreStopper;
+    },
+    acquire(quantity = 1, memo) {
+      return this._acquire(quantity, memo != null ? memo : "", 0);
+    },
+    tryAcquire(quantity = 1, timeout, memo) {
+      return this._acquire(quantity, memo != null ? memo : "", timeout);
+    },
+    peekQueues() {
+      return queue2;
+    }
+  };
+}
 
 // src/lib/src/strbin.ts
 var revMap = {};
@@ -3430,7 +3582,8 @@ var escapeStringToHTML = (str) => {
   });
 };
 
-// src/lib/src/e2ee_v2.ts
+// src/lib/src/mods.ts
+var import_crypto = require("crypto");
 var webcrypto;
 if (typeof window !== "undefined" && window.crypto) {
   webcrypto = window.crypto;
@@ -3438,6 +3591,8 @@ if (typeof window !== "undefined" && window.crypto) {
   const crypto2 = import_crypto.webcrypto;
   webcrypto = crypto2;
 }
+
+// src/lib/src/e2ee_v2.ts
 var KeyBuffs = /* @__PURE__ */ new Map();
 var decKeyBuffs = /* @__PURE__ */ new Map();
 var KEY_RECYCLE_COUNT = 100;
@@ -3597,6 +3752,158 @@ async function testCrypt() {
   }
 }
 
+// src/lib/src/path.ts
+function isValidFilenameInWidows(filename) {
+  const regex = /[\u0000-\u001f]|[\\":?<>|*#]/g;
+  if (regex.test(filename))
+    return false;
+  const win = /(\\|\/)(COM\d|LPT\d|CON|PRN|AUX|NUL|CLOCK$)($|\.)/gi;
+  if (win.test(filename))
+    return false;
+  return true;
+}
+function isValidFilenameInDarwin(filename) {
+  const regex = /[\u0000-\u001f]|[:]/g;
+  return !regex.test(filename);
+}
+function isValidFilenameInLinux(filename) {
+  const regex = /[\u0000-\u001f]/g;
+  return !regex.test(filename);
+}
+function isValidFilenameInAndroid(filename) {
+  const regex = /[\u0000-\u001f]|[\\":?<>|*#]/g;
+  return !regex.test(filename);
+}
+function isFilePath(path) {
+  if (path.indexOf(":") === -1)
+    return true;
+  return false;
+}
+function stripAllPrefixes(prefixedPath) {
+  if (isFilePath(prefixedPath))
+    return prefixedPath;
+  const [, body] = expandFilePathPrefix(prefixedPath);
+  return stripAllPrefixes(body);
+}
+function addPrefix(path, prefix) {
+  if (prefix && path.startsWith(prefix))
+    return path;
+  return `${prefix != null ? prefix : ""}${path}`;
+}
+function expandFilePathPrefix(path) {
+  let [prefix, body] = path.split(":", 2);
+  if (!body) {
+    body = prefix;
+    prefix = "";
+  } else {
+    prefix = prefix + ":";
+  }
+  return [prefix, body];
+}
+function expandDocumentIDPrefix(id) {
+  let [prefix, body] = id.split(":", 2);
+  if (!body) {
+    body = prefix;
+    prefix = "";
+  } else {
+    prefix = prefix + ":";
+  }
+  return [prefix, body];
+}
+var hashString = memorizeFuncWithLRUCache(async (key) => {
+  const buff = writeString(key);
+  let digest = await webcrypto.subtle.digest("SHA-256", buff);
+  const len = key.length;
+  for (let i = 0; i < len; i++) {
+    digest = await webcrypto.subtle.digest("SHA-256", buff);
+  }
+  return uint8ArrayToHexString(new Uint8Array(digest));
+});
+async function path2id_base(filename, obfuscatePassphrase) {
+  if (filename.startsWith(PREFIX_OBFUSCATED))
+    return filename;
+  let x = filename;
+  if (x.startsWith("_"))
+    x = "/" + x;
+  if (!obfuscatePassphrase)
+    return x;
+  const [prefix, body] = expandFilePathPrefix(x);
+  if (body.startsWith(PREFIX_OBFUSCATED))
+    return x;
+  const hashedPassphrase = await hashString(obfuscatePassphrase);
+  const out = await hashString(`${hashedPassphrase}:${filename}`);
+  return prefix + PREFIX_OBFUSCATED + out;
+}
+function id2path_base(id, entry) {
+  if (entry && (entry == null ? void 0 : entry.path)) {
+    return id2path_base(entry.path);
+  }
+  if (id.startsWith(PREFIX_OBFUSCATED))
+    throw new Error("Entry has been obfuscated!");
+  const [prefix, body] = expandDocumentIDPrefix(id);
+  if (body.startsWith(PREFIX_OBFUSCATED))
+    throw new Error("Entry has been obfuscated!");
+  if (body.startsWith("/")) {
+    return body.substring(1);
+  }
+  return prefix + body;
+}
+function getPath(entry) {
+  return id2path_base(entry._id, entry);
+}
+function stripPrefix(prefixedPath) {
+  const [prefix, body] = prefixedPath.split(":", 2);
+  if (!body) {
+    return prefix;
+  }
+  return body;
+}
+function shouldBeIgnored(filename) {
+  if (filename == FLAGMD_REDFLAG) {
+    return true;
+  }
+  if (filename == FLAGMD_REDFLAG2) {
+    return true;
+  }
+  if (filename == FLAGMD_REDFLAG3) {
+    return true;
+  }
+  if (filename.startsWith(PREFIXMD_LOGFILE)) {
+    return true;
+  }
+  return false;
+}
+function isPlainText(filename) {
+  if (filename.endsWith(".md"))
+    return true;
+  if (filename.endsWith(".txt"))
+    return true;
+  if (filename.endsWith(".svg"))
+    return true;
+  if (filename.endsWith(".html"))
+    return true;
+  if (filename.endsWith(".csv"))
+    return true;
+  if (filename.endsWith(".css"))
+    return true;
+  if (filename.endsWith(".js"))
+    return true;
+  if (filename.endsWith(".xml"))
+    return true;
+  if (filename.endsWith(".canvas"))
+    return true;
+  return false;
+}
+function shouldSplitAsPlainText(filename) {
+  if (filename.endsWith(".md"))
+    return true;
+  if (filename.endsWith(".txt"))
+    return true;
+  if (filename.endsWith(".canvas"))
+    return true;
+  return false;
+}
+
 // src/lib/src/utils_couchdb.ts
 var isValidRemoteCouchDBURI = (uri) => {
   if (uri.startsWith("https://"))
@@ -3717,9 +4024,18 @@ var enableEncryption = (db, passphrase, useDynamicIterationCount, migrationDecry
       const saveDoc = {
         ...doc
       };
-      if (saveDoc._id.startsWith("h:+") || saveDoc._id == SYNCINFO_ID) {
+      if (isEncryptedChunkEntry(saveDoc) || isSyncInfoEntry(saveDoc)) {
         try {
           saveDoc.data = await encrypt(saveDoc.data, passphrase, useDynamicIterationCount);
+        } catch (ex) {
+          Logger("Encryption failed.", LOG_LEVEL.NOTICE);
+          Logger(ex);
+          throw ex;
+        }
+      }
+      if (isObfuscatedEntry(saveDoc)) {
+        try {
+          saveDoc.path = await encrypt(getPath(saveDoc), passphrase, useDynamicIterationCount);
         } catch (ex) {
           Logger("Encryption failed.", LOG_LEVEL.NOTICE);
           Logger(ex);
@@ -3732,19 +4048,31 @@ var enableEncryption = (db, passphrase, useDynamicIterationCount, migrationDecry
       const loadDoc = {
         ...doc
       };
-      if (loadDoc._id.startsWith("h:+") || loadDoc._id == SYNCINFO_ID) {
+      const _isChunkOrSyncInfo = isEncryptedChunkEntry(loadDoc) || isSyncInfoEntry(loadDoc);
+      const _isObfuscatedEntry = isObfuscatedEntry(loadDoc);
+      if (_isChunkOrSyncInfo || _isObfuscatedEntry) {
         if (migrationDecrypt && decrypted.has(loadDoc._id)) {
           return loadDoc;
         }
         try {
-          loadDoc.data = await decrypt(loadDoc.data, passphrase, useDynamicIterationCount);
+          if (_isChunkOrSyncInfo) {
+            loadDoc.data = await decrypt(loadDoc.data, passphrase, useDynamicIterationCount);
+          }
+          if (_isObfuscatedEntry) {
+            loadDoc.path = await decrypt(getPath(loadDoc), passphrase, useDynamicIterationCount);
+          }
           if (migrationDecrypt) {
             decrypted.set(loadDoc._id, true);
           }
         } catch (ex) {
           if (useDynamicIterationCount) {
             try {
-              loadDoc.data = await decrypt(loadDoc.data, passphrase, false);
+              if (_isChunkOrSyncInfo) {
+                loadDoc.data = await decrypt(loadDoc.data, passphrase, false);
+              }
+              if (_isObfuscatedEntry) {
+                loadDoc.path = await decrypt(getPath(loadDoc), passphrase, useDynamicIterationCount);
+              }
               if (migrationDecrypt) {
                 decrypted.set(loadDoc._id, true);
               }
@@ -3784,6 +4112,11 @@ var delay = (ms) => {
     }, ms);
   });
 };
+var Parallels = (ps = /* @__PURE__ */ new Set()) => ({
+  add: (p) => ps.add(!!p.then(() => ps.delete(p)).catch(() => ps.delete(p)) && p),
+  wait: (limit) => ps.size >= limit && Promise.race(ps),
+  all: () => Promise.all(ps)
+});
 function getDocData(doc) {
   return typeof doc == "string" ? doc : doc.join("");
 }
@@ -3828,6 +4161,70 @@ function isDocContentSame(docA, docB) {
     return false;
   return true;
 }
+function isObfuscatedEntry(doc) {
+  if (doc._id.startsWith(PREFIX_OBFUSCATED)) {
+    return true;
+  }
+  return false;
+}
+function isEncryptedChunkEntry(doc) {
+  if (doc._id.startsWith(PREFIX_ENCRYPTED_CHUNK)) {
+    return true;
+  }
+  return false;
+}
+function isSyncInfoEntry(doc) {
+  if (doc._id == SYNCINFO_ID) {
+    return true;
+  }
+  return false;
+}
+function memorizeFuncWithLRUCache(func) {
+  const cache = new LRUCache(100, 1e5, true);
+  return (key) => {
+    const isExists = cache.has(key);
+    if (isExists)
+      return cache.get(key);
+    const value = func(key);
+    cache.set(key, value);
+    return value;
+  };
+}
+var traps = {};
+function waitForSignal(id, timeout) {
+  let resolveTrap;
+  let trapJob;
+  const timer = setTimeout(() => {
+    if (id in traps) {
+      traps[id] = traps[id].filter((e2) => e2 != trapJob);
+    }
+    if (resolveTrap)
+      resolveTrap(false);
+    resolveTrap = null;
+  }, timeout);
+  return new Promise((res2) => {
+    if (!(id in traps))
+      traps[id] = [];
+    resolveTrap = res2;
+    trapJob = () => {
+      if (timer)
+        clearTimeout(timer);
+      res2(true);
+    };
+    traps[id].push(trapJob);
+  });
+}
+function sendSignal(key) {
+  if (!(key in traps)) {
+    return;
+  }
+  const trap = traps[key];
+  delete traps[key];
+  for (const resolver of trap) {
+    resolver();
+  }
+}
+var globalConcurrencyController = Semaphore(50);
 
 // node_modules/pouchdb-collections/lib/index.es.js
 function mangle(key) {
@@ -15061,85 +15458,13 @@ var ConflictResolveModal = class extends import_obsidian.Modal {
   }
 };
 
-// src/lib/src/path.ts
-function isValidFilenameInWidows(filename) {
-  const regex = /[\u0000-\u001f]|[\\":?<>|*#]/g;
-  if (regex.test(filename))
-    return false;
-  const win = /(\\|\/)(COM\d|LPT\d|CON|PRN|AUX|NUL|CLOCK$)($|\.)/gi;
-  if (win.test(filename))
-    return false;
-  return true;
-}
-function isValidFilenameInDarwin(filename) {
-  const regex = /[\u0000-\u001f]|[:]/g;
-  return !regex.test(filename);
-}
-function isValidFilenameInLinux(filename) {
-  const regex = /[\u0000-\u001f]/g;
-  return !regex.test(filename);
-}
-function isValidFilenameInAndroid(filename) {
-  const regex = /[\u0000-\u001f]|[\\":?<>|*#]/g;
-  return !regex.test(filename);
-}
-function path2id_base(filename) {
-  let x = filename;
-  if (x.startsWith("_"))
-    x = "/" + x;
-  return x;
-}
-function id2path_base(filename) {
-  return filename;
-}
-function shouldBeIgnored(filename) {
-  if (filename == FLAGMD_REDFLAG) {
-    return true;
-  }
-  if (filename == FLAGMD_REDFLAG2) {
-    return true;
-  }
-  if (filename == FLAGMD_REDFLAG3) {
-    return true;
-  }
-  if (filename.startsWith(PREFIXMD_LOGFILE)) {
-    return true;
-  }
-  return false;
-}
-function isPlainText(filename) {
-  if (filename.endsWith(".md"))
-    return true;
-  if (filename.endsWith(".txt"))
-    return true;
-  if (filename.endsWith(".svg"))
-    return true;
-  if (filename.endsWith(".html"))
-    return true;
-  if (filename.endsWith(".csv"))
-    return true;
-  if (filename.endsWith(".css"))
-    return true;
-  if (filename.endsWith(".js"))
-    return true;
-  if (filename.endsWith(".xml"))
-    return true;
-  if (filename.endsWith(".canvas"))
-    return true;
-  return false;
-}
-function shouldSplitAsPlainText(filename) {
-  if (filename.endsWith(".md"))
-    return true;
-  if (filename.endsWith(".txt"))
-    return true;
-  if (filename.endsWith(".canvas"))
-    return true;
-  return false;
-}
-
 // node_modules/svelte/internal/index.mjs
 function noop() {
+}
+function assign(tar, src) {
+  for (const k in src)
+    tar[k] = src[k];
+  return tar;
 }
 function run(fn) {
   return fn();
@@ -15162,6 +15487,32 @@ function is_empty(obj) {
 function null_to_empty(value) {
   return value == null ? "" : value;
 }
+var globals = typeof window !== "undefined" ? window : typeof globalThis !== "undefined" ? globalThis : window;
+var ResizeObserverSingleton = class {
+  constructor(options) {
+    this.options = options;
+    this._listeners = "WeakMap" in globals ? /* @__PURE__ */ new WeakMap() : void 0;
+  }
+  observe(element2, listener) {
+    this._listeners.set(element2, listener);
+    this._getObserver().observe(element2, this.options);
+    return () => {
+      this._listeners.delete(element2);
+      this._observer.unobserve(element2);
+    };
+  }
+  _getObserver() {
+    var _a;
+    return (_a = this._observer) !== null && _a !== void 0 ? _a : this._observer = new ResizeObserver((entries) => {
+      var _a2;
+      for (const entry of entries) {
+        ResizeObserverSingleton.entries.set(entry.target, entry);
+        (_a2 = this._listeners.get(entry.target)) === null || _a2 === void 0 ? void 0 : _a2(entry);
+      }
+    });
+  }
+};
+ResizeObserverSingleton.entries = "WeakMap" in globals ? /* @__PURE__ */ new WeakMap() : void 0;
 var is_hydrating = false;
 function start_hydrating() {
   is_hydrating = true;
@@ -15230,23 +15581,42 @@ function attr(node, attribute, value) {
   else if (node.getAttribute(attribute) !== value)
     node.setAttribute(attribute, value);
 }
+function init_binding_group(group) {
+  let _inputs;
+  return {
+    p(...inputs) {
+      _inputs = inputs;
+      _inputs.forEach((input) => group.push(input));
+    },
+    r() {
+      _inputs.forEach((input) => group.splice(group.indexOf(input), 1));
+    }
+  };
+}
 function children(element2) {
   return Array.from(element2.childNodes);
 }
 function set_data(text2, data) {
   data = "" + data;
-  if (text2.wholeText !== data)
-    text2.data = data;
+  if (text2.data === data)
+    return;
+  text2.data = data;
 }
-function set_style(node, key, value, important) {
-  if (value === null) {
-    node.style.removeProperty(key);
-  } else {
-    node.style.setProperty(key, value, important ? "important" : "");
+function select_option(select, value, mounting) {
+  for (let i = 0; i < select.options.length; i += 1) {
+    const option = select.options[i];
+    if (option.__value === value) {
+      option.selected = true;
+      return;
+    }
+  }
+  if (!mounting || value !== void 0) {
+    select.selectedIndex = -1;
   }
 }
-function toggle_class(element2, name, toggle) {
-  element2.classList[toggle ? "add" : "remove"](name);
+function select_value(select) {
+  const selected_option = select.querySelector(":checked");
+  return selected_option && selected_option.__value;
 }
 var current_component;
 function set_current_component(component) {
@@ -15264,7 +15634,7 @@ var dirty_components = [];
 var binding_callbacks = [];
 var render_callbacks = [];
 var flush_callbacks = [];
-var resolved_promise = Promise.resolve();
+var resolved_promise = /* @__PURE__ */ Promise.resolve();
 var update_scheduled = false;
 function schedule_update() {
   if (!update_scheduled) {
@@ -15326,12 +15696,117 @@ function update($$) {
     $$.after_update.forEach(add_render_callback);
   }
 }
+function flush_render_callbacks(fns) {
+  const filtered = [];
+  const targets = [];
+  render_callbacks.forEach((c) => fns.indexOf(c) === -1 ? filtered.push(c) : targets.push(c));
+  targets.forEach((c) => c());
+  render_callbacks = filtered;
+}
 var outroing = /* @__PURE__ */ new Set();
+var outros;
+function group_outros() {
+  outros = {
+    r: 0,
+    c: [],
+    p: outros
+  };
+}
+function check_outros() {
+  if (!outros.r) {
+    run_all(outros.c);
+  }
+  outros = outros.p;
+}
 function transition_in(block, local) {
   if (block && block.i) {
     outroing.delete(block);
     block.i(local);
   }
+}
+function transition_out(block, local, detach2, callback) {
+  if (block && block.o) {
+    if (outroing.has(block))
+      return;
+    outroing.add(block);
+    outros.c.push(() => {
+      outroing.delete(block);
+      if (callback) {
+        if (detach2)
+          block.d(1);
+        callback();
+      }
+    });
+    block.o(local);
+  } else if (callback) {
+    callback();
+  }
+}
+function get_spread_update(levels, updates) {
+  const update2 = {};
+  const to_null_out = {};
+  const accounted_for = { $$scope: 1 };
+  let i = levels.length;
+  while (i--) {
+    const o = levels[i];
+    const n2 = updates[i];
+    if (n2) {
+      for (const key in o) {
+        if (!(key in n2))
+          to_null_out[key] = 1;
+      }
+      for (const key in n2) {
+        if (!accounted_for[key]) {
+          update2[key] = n2[key];
+          accounted_for[key] = 1;
+        }
+      }
+      levels[i] = n2;
+    } else {
+      for (const key in o) {
+        accounted_for[key] = 1;
+      }
+    }
+  }
+  for (const key in to_null_out) {
+    if (!(key in update2))
+      update2[key] = void 0;
+  }
+  return update2;
+}
+function get_spread_object(spread_props) {
+  return typeof spread_props === "object" && spread_props !== null ? spread_props : {};
+}
+var _boolean_attributes = [
+  "allowfullscreen",
+  "allowpaymentrequest",
+  "async",
+  "autofocus",
+  "autoplay",
+  "checked",
+  "controls",
+  "default",
+  "defer",
+  "disabled",
+  "formnovalidate",
+  "hidden",
+  "inert",
+  "ismap",
+  "loop",
+  "multiple",
+  "muted",
+  "nomodule",
+  "novalidate",
+  "open",
+  "playsinline",
+  "readonly",
+  "required",
+  "reversed",
+  "selected"
+];
+var boolean_attributes = /* @__PURE__ */ new Set([..._boolean_attributes]);
+function create_component(block) {
+  block && block.c();
 }
 function mount_component(component, target, anchor, customElement) {
   const { fragment, after_update } = component.$$;
@@ -15352,6 +15827,7 @@ function mount_component(component, target, anchor, customElement) {
 function destroy_component(component, detaching) {
   const $$ = component.$$;
   if ($$.fragment !== null) {
+    flush_render_callbacks($$.after_update);
     run_all($$.on_destroy);
     $$.fragment && $$.fragment.d(detaching);
     $$.on_destroy = $$.fragment = null;
@@ -15366,7 +15842,7 @@ function make_dirty(component, i) {
   }
   component.$$.dirty[i / 31 | 0] |= 1 << i % 31;
 }
-function init2(component, options, instance3, create_fragment3, not_equal, props, append_styles2, dirty = [-1]) {
+function init2(component, options, instance4, create_fragment4, not_equal, props, append_styles2, dirty = [-1]) {
   const parent_component = current_component;
   set_current_component(component);
   const $$ = component.$$ = {
@@ -15389,7 +15865,7 @@ function init2(component, options, instance3, create_fragment3, not_equal, props
   };
   append_styles2 && append_styles2($$.root);
   let ready = false;
-  $$.ctx = instance3 ? instance3(component, options.props || {}, (i, ret, ...rest) => {
+  $$.ctx = instance4 ? instance4(component, options.props || {}, (i, ret, ...rest) => {
     const value = rest.length ? rest[0] : ret;
     if ($$.ctx && not_equal($$.ctx[i], $$.ctx[i] = value)) {
       if (!$$.skip_bound && $$.bound[i])
@@ -15402,7 +15878,7 @@ function init2(component, options, instance3, create_fragment3, not_equal, props
   $$.update();
   ready = true;
   run_all($$.before_update);
-  $$.fragment = create_fragment3 ? create_fragment3($$.ctx) : false;
+  $$.fragment = create_fragment4 ? create_fragment4($$.ctx) : false;
   if (options.target) {
     if (options.hydrate) {
       start_hydrating();
@@ -15491,125 +15967,48 @@ var SvelteComponent = class {
   }
 };
 
-// src/lib/src/wrapper.ts
-var WrappedNotice = class {
-  constructor(message, timeout) {
-    var _a;
-    let strMessage = "";
-    if (message instanceof DocumentFragment) {
-      strMessage = (_a = message.textContent) != null ? _a : "";
-    } else {
-      strMessage = message;
-    }
-    Logger(strMessage, LOG_LEVEL.NOTICE);
-  }
-  setMessage(message) {
-    var _a;
-    let strMessage = "";
-    if (message instanceof DocumentFragment) {
-      strMessage = (_a = message.textContent) != null ? _a : "";
-    } else {
-      strMessage = message;
-    }
-    Logger(strMessage, LOG_LEVEL.NOTICE);
-    return this;
-  }
-  hide() {
-  }
-};
-var _notice = WrappedNotice;
-function setNoticeClass(notice) {
-  _notice = notice;
-}
-function NewNotice(message, timeout) {
-  return new _notice(message, timeout);
-}
-
-// src/lib/src/semaphore.ts
-function makeUniqueString() {
-  const randomStrSrc = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const temp = [...Array(30)].map(() => Math.floor(Math.random() * randomStrSrc.length)).map((e2) => randomStrSrc[e2]).join("");
-  return `${Date.now()}-${temp}`;
-}
-function Semaphore(limit, onRelease) {
-  const _limit = limit;
-  let currentProcesses = 0;
-  let queue2 = [];
-  function execProcess() {
-    queue2 = queue2.filter((e2) => e2.state != "DONE");
-    for (const queueItem2 of queue2) {
-      if (queueItem2.state != "NONE")
-        continue;
-      if (queueItem2.quantity + currentProcesses > _limit) {
-        break;
-      }
-      queueItem2.state = "RUNNING";
-      currentProcesses += queueItem2.quantity;
-      if (queueItem2 == null ? void 0 : queueItem2.timer) {
-        clearTimeout(queueItem2.timer);
-      }
-      queueItem2.notify(true);
-    }
-  }
-  function release(key) {
-    const finishedTask = queue2.find((e2) => e2.key == key);
-    if (!finishedTask) {
-      throw new Error("Missing locked semaphore!");
-    }
-    if (finishedTask.state == "RUNNING") {
-      currentProcesses -= finishedTask.quantity;
-    }
-    finishedTask.state = "DONE";
-    if (onRelease)
-      onRelease(queue2.filter((e2) => e2.state != "DONE"));
-    execProcess();
-  }
-  return {
-    _acquire(quantity, memo, timeout) {
-      const key = makeUniqueString();
-      if (_limit < quantity) {
-        throw Error("Too big quantity");
-      }
-      let notify = (_) => {
-      };
-      const semaphoreStopper = new Promise((res2) => {
-        notify = (result) => {
-          if (result) {
-            res2(() => {
-              release(key);
-            });
-          } else {
-            res2(false);
+// node_modules/svelte/store/index.mjs
+var subscriber_queue = [];
+function writable(value, start = noop) {
+  let stop;
+  const subscribers = /* @__PURE__ */ new Set();
+  function set(new_value) {
+    if (safe_not_equal(value, new_value)) {
+      value = new_value;
+      if (stop) {
+        const run_queue = !subscriber_queue.length;
+        for (const subscriber of subscribers) {
+          subscriber[1]();
+          subscriber_queue.push(subscriber, value);
+        }
+        if (run_queue) {
+          for (let i = 0; i < subscriber_queue.length; i += 2) {
+            subscriber_queue[i][0](subscriber_queue[i + 1]);
           }
-        };
-      });
-      const notifier = {
-        key,
-        notify,
-        semaphoreStopper,
-        quantity,
-        memo,
-        state: "NONE"
-      };
-      if (timeout)
-        notifier.timer = setTimeout(() => {
-          release(key);
-          notify(false);
-        }, timeout);
-      queue2.push(notifier);
-      execProcess();
-      return semaphoreStopper;
-    },
-    acquire(quantity = 1, memo) {
-      return this._acquire(quantity, memo != null ? memo : "", 0);
-    },
-    tryAcquire(quantity = 1, timeout, memo) {
-      return this._acquire(quantity, memo != null ? memo : "", timeout);
-    },
-    peekQueues() {
-      return queue2;
+          subscriber_queue.length = 0;
+        }
+      }
     }
-  };
+  }
+  function update2(fn) {
+    set(fn(value));
+  }
+  function subscribe2(run2, invalidate = noop) {
+    const subscriber = [run2, invalidate];
+    subscribers.add(subscriber);
+    if (subscribers.size === 1) {
+      stop = start(set) || noop;
+    }
+    run2(value);
+    return () => {
+      subscribers.delete(subscriber);
+      if (subscribers.size === 0 && stop) {
+        stop();
+        stop = null;
+      }
+    };
+  }
+  return { set, update: update2, subscribe: subscribe2 };
 }
 
 // src/lib/src/lock.ts
@@ -15685,22 +16084,879 @@ var LiveSyncCommands = class {
   get localDatabase() {
     return this.plugin.localDatabase;
   }
+  id2path(id, entry, stripPrefix2) {
+    return this.plugin.id2path(id, entry, stripPrefix2);
+  }
+  async path2id(filename, prefix) {
+    return await this.plugin.path2id(filename, prefix);
+  }
+  getPath(entry) {
+    return this.plugin.getPath(entry);
+  }
   constructor(plugin2) {
     this.plugin = plugin2;
   }
 };
 
-// src/CmdPluginAndTheirSettings.ts
-var PluginAndTheirSettings = class extends LiveSyncCommands {
+// src/JsonResolvePane.svelte
+var import_diff_match_patch2 = __toESM(require_diff_match_patch(), 1);
+function add_css(target) {
+  append_styles(target, "svelte-guf68w", ".deleted.svelte-guf68w{text-decoration:line-through}.svelte-guf68w{box-sizing:border-box}.scroller.svelte-guf68w{display:flex;flex-direction:column;overflow-y:scroll;max-height:60vh;user-select:text}.json-source.svelte-guf68w{white-space:pre;height:auto;overflow:auto;min-height:var(--font-ui-medium);flex-grow:1}");
+}
+function get_each_context(ctx, list, i) {
+  const child_ctx = ctx.slice();
+  child_ctx[25] = list[i];
+  return child_ctx;
+}
+function get_each_context_1(ctx, list, i) {
+  const child_ctx = ctx.slice();
+  child_ctx[28] = list[i];
+  return child_ctx;
+}
+function create_else_block(ctx) {
+  let div0;
+  let t0;
+  let t1;
+  let div1;
+  let t2;
+  let t3;
+  let t4;
+  let t5_value = new Date(ctx[3].mtime).toLocaleString() + "";
+  let t5;
+  let t6;
+  let t7_value = ctx[5].length + "";
+  let t7;
+  let t8;
+  let t9;
+  let div2;
+  let t10;
+  let t11;
+  let t12;
+  let t13_value = new Date(ctx[4].mtime).toLocaleString() + "";
+  let t13;
+  let t14;
+  let t15_value = ctx[6].length + "";
+  let t15;
+  let t16;
+  let t17;
+  let div3;
+  let button;
+  let mounted;
+  let dispose;
+  let each_value_1 = ctx[11];
+  let each_blocks = [];
+  for (let i = 0; i < each_value_1.length; i += 1) {
+    each_blocks[i] = create_each_block_1(get_each_context_1(ctx, each_value_1, i));
+  }
+  function select_block_type_1(ctx2, dirty) {
+    if (ctx2[8] != false)
+      return create_if_block_3;
+    return create_else_block_1;
+  }
+  let current_block_type = select_block_type_1(ctx, -1);
+  let if_block0 = current_block_type(ctx);
+  let if_block1 = ctx[3]._id == ctx[4]._id && create_if_block_2(ctx);
+  let if_block2 = ctx[3]._id == ctx[4]._id && create_if_block_1(ctx);
+  return {
+    c() {
+      div0 = element("div");
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        each_blocks[i].c();
+      }
+      t0 = space();
+      if_block0.c();
+      t1 = space();
+      div1 = element("div");
+      t2 = text(ctx[1]);
+      t3 = space();
+      if (if_block1)
+        if_block1.c();
+      t4 = text(" ,");
+      t5 = text(t5_value);
+      t6 = space();
+      t7 = text(t7_value);
+      t8 = text(" letters");
+      t9 = space();
+      div2 = element("div");
+      t10 = text(ctx[2]);
+      t11 = space();
+      if (if_block2)
+        if_block2.c();
+      t12 = text(" ,");
+      t13 = text(t13_value);
+      t14 = space();
+      t15 = text(t15_value);
+      t16 = text(" letters");
+      t17 = space();
+      div3 = element("div");
+      button = element("button");
+      button.textContent = "Apply";
+      attr(div0, "class", "options svelte-guf68w");
+      attr(div1, "class", "svelte-guf68w");
+      attr(div2, "class", "svelte-guf68w");
+      attr(button, "class", "svelte-guf68w");
+      attr(div3, "class", "buttons svelte-guf68w");
+    },
+    m(target, anchor) {
+      insert(target, div0, anchor);
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        if (each_blocks[i]) {
+          each_blocks[i].m(div0, null);
+        }
+      }
+      insert(target, t0, anchor);
+      if_block0.m(target, anchor);
+      insert(target, t1, anchor);
+      insert(target, div1, anchor);
+      append(div1, t2);
+      append(div1, t3);
+      if (if_block1)
+        if_block1.m(div1, null);
+      append(div1, t4);
+      append(div1, t5);
+      append(div1, t6);
+      append(div1, t7);
+      append(div1, t8);
+      insert(target, t9, anchor);
+      insert(target, div2, anchor);
+      append(div2, t10);
+      append(div2, t11);
+      if (if_block2)
+        if_block2.m(div2, null);
+      append(div2, t12);
+      append(div2, t13);
+      append(div2, t14);
+      append(div2, t15);
+      append(div2, t16);
+      insert(target, t17, anchor);
+      insert(target, div3, anchor);
+      append(div3, button);
+      if (!mounted) {
+        dispose = listen(button, "click", ctx[12]);
+        mounted = true;
+      }
+    },
+    p(ctx2, dirty) {
+      if (dirty & 2688) {
+        each_value_1 = ctx2[11];
+        let i;
+        for (i = 0; i < each_value_1.length; i += 1) {
+          const child_ctx = get_each_context_1(ctx2, each_value_1, i);
+          if (each_blocks[i]) {
+            each_blocks[i].p(child_ctx, dirty);
+          } else {
+            each_blocks[i] = create_each_block_1(child_ctx);
+            each_blocks[i].c();
+            each_blocks[i].m(div0, null);
+          }
+        }
+        for (; i < each_blocks.length; i += 1) {
+          each_blocks[i].d(1);
+        }
+        each_blocks.length = each_value_1.length;
+      }
+      if (current_block_type === (current_block_type = select_block_type_1(ctx2, dirty)) && if_block0) {
+        if_block0.p(ctx2, dirty);
+      } else {
+        if_block0.d(1);
+        if_block0 = current_block_type(ctx2);
+        if (if_block0) {
+          if_block0.c();
+          if_block0.m(t1.parentNode, t1);
+        }
+      }
+      if (dirty & 2)
+        set_data(t2, ctx2[1]);
+      if (ctx2[3]._id == ctx2[4]._id) {
+        if (if_block1) {
+          if_block1.p(ctx2, dirty);
+        } else {
+          if_block1 = create_if_block_2(ctx2);
+          if_block1.c();
+          if_block1.m(div1, t4);
+        }
+      } else if (if_block1) {
+        if_block1.d(1);
+        if_block1 = null;
+      }
+      if (dirty & 8 && t5_value !== (t5_value = new Date(ctx2[3].mtime).toLocaleString() + ""))
+        set_data(t5, t5_value);
+      if (dirty & 32 && t7_value !== (t7_value = ctx2[5].length + ""))
+        set_data(t7, t7_value);
+      if (dirty & 4)
+        set_data(t10, ctx2[2]);
+      if (ctx2[3]._id == ctx2[4]._id) {
+        if (if_block2) {
+          if_block2.p(ctx2, dirty);
+        } else {
+          if_block2 = create_if_block_1(ctx2);
+          if_block2.c();
+          if_block2.m(div2, t12);
+        }
+      } else if (if_block2) {
+        if_block2.d(1);
+        if_block2 = null;
+      }
+      if (dirty & 16 && t13_value !== (t13_value = new Date(ctx2[4].mtime).toLocaleString() + ""))
+        set_data(t13, t13_value);
+      if (dirty & 64 && t15_value !== (t15_value = ctx2[6].length + ""))
+        set_data(t15, t15_value);
+    },
+    d(detaching) {
+      if (detaching)
+        detach(div0);
+      destroy_each(each_blocks, detaching);
+      if (detaching)
+        detach(t0);
+      if_block0.d(detaching);
+      if (detaching)
+        detach(t1);
+      if (detaching)
+        detach(div1);
+      if (if_block1)
+        if_block1.d();
+      if (detaching)
+        detach(t9);
+      if (detaching)
+        detach(div2);
+      if (if_block2)
+        if_block2.d();
+      if (detaching)
+        detach(t17);
+      if (detaching)
+        detach(div3);
+      mounted = false;
+      dispose();
+    }
+  };
+}
+function create_if_block(ctx) {
+  let div0;
+  let t1;
+  let div1;
+  let button;
+  let mounted;
+  let dispose;
+  return {
+    c() {
+      div0 = element("div");
+      div0.textContent = "Just for a minute, please!";
+      t1 = space();
+      div1 = element("div");
+      button = element("button");
+      button.textContent = "Dismiss";
+      attr(div0, "class", "message svelte-guf68w");
+      attr(button, "class", "svelte-guf68w");
+      attr(div1, "class", "buttons svelte-guf68w");
+    },
+    m(target, anchor) {
+      insert(target, div0, anchor);
+      insert(target, t1, anchor);
+      insert(target, div1, anchor);
+      append(div1, button);
+      if (!mounted) {
+        dispose = listen(button, "click", ctx[12]);
+        mounted = true;
+      }
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching)
+        detach(div0);
+      if (detaching)
+        detach(t1);
+      if (detaching)
+        detach(div1);
+      mounted = false;
+      dispose();
+    }
+  };
+}
+function create_if_block_4(ctx) {
+  let label;
+  let input;
+  let input_value_value;
+  let value_has_changed = false;
+  let t0;
+  let div;
+  let t1_value = ctx[28][1] + "";
+  let t1;
+  let label_class_value;
+  let binding_group;
+  let mounted;
+  let dispose;
+  binding_group = init_binding_group(ctx[21][0]);
+  return {
+    c() {
+      label = element("label");
+      input = element("input");
+      t0 = space();
+      div = element("div");
+      t1 = text(t1_value);
+      attr(input, "type", "radio");
+      attr(input, "name", "disp");
+      input.__value = input_value_value = ctx[28][0];
+      input.value = input.__value;
+      attr(input, "class", "sls-setting-tab svelte-guf68w");
+      attr(div, "class", "sls-setting-menu-btn svelte-guf68w");
+      attr(label, "class", label_class_value = null_to_empty(`sls-setting-label ${ctx[28][0] == ctx[7] ? "selected" : ""}`) + " svelte-guf68w");
+      binding_group.p(input);
+    },
+    m(target, anchor) {
+      insert(target, label, anchor);
+      append(label, input);
+      input.checked = input.__value === ctx[7];
+      append(label, t0);
+      append(label, div);
+      append(div, t1);
+      if (!mounted) {
+        dispose = listen(input, "change", ctx[20]);
+        mounted = true;
+      }
+    },
+    p(ctx2, dirty) {
+      if (dirty & 2048 && input_value_value !== (input_value_value = ctx2[28][0])) {
+        input.__value = input_value_value;
+        input.value = input.__value;
+        value_has_changed = true;
+      }
+      if (value_has_changed || dirty & 2176) {
+        input.checked = input.__value === ctx2[7];
+      }
+      if (dirty & 2048 && t1_value !== (t1_value = ctx2[28][1] + ""))
+        set_data(t1, t1_value);
+      if (dirty & 2176 && label_class_value !== (label_class_value = null_to_empty(`sls-setting-label ${ctx2[28][0] == ctx2[7] ? "selected" : ""}`) + " svelte-guf68w")) {
+        attr(label, "class", label_class_value);
+      }
+    },
+    d(detaching) {
+      if (detaching)
+        detach(label);
+      binding_group.r();
+      mounted = false;
+      dispose();
+    }
+  };
+}
+function create_each_block_1(ctx) {
+  let if_block_anchor;
+  let if_block = (ctx[28][0] == "" || ctx[9][ctx[28][0]] != false) && create_if_block_4(ctx);
+  return {
+    c() {
+      if (if_block)
+        if_block.c();
+      if_block_anchor = empty();
+    },
+    m(target, anchor) {
+      if (if_block)
+        if_block.m(target, anchor);
+      insert(target, if_block_anchor, anchor);
+    },
+    p(ctx2, dirty) {
+      if (ctx2[28][0] == "" || ctx2[9][ctx2[28][0]] != false) {
+        if (if_block) {
+          if_block.p(ctx2, dirty);
+        } else {
+          if_block = create_if_block_4(ctx2);
+          if_block.c();
+          if_block.m(if_block_anchor.parentNode, if_block_anchor);
+        }
+      } else if (if_block) {
+        if_block.d(1);
+        if_block = null;
+      }
+    },
+    d(detaching) {
+      if (if_block)
+        if_block.d(detaching);
+      if (detaching)
+        detach(if_block_anchor);
+    }
+  };
+}
+function create_else_block_1(ctx) {
+  let t2;
+  return {
+    c() {
+      t2 = text("NO PREVIEW");
+    },
+    m(target, anchor) {
+      insert(target, t2, anchor);
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching)
+        detach(t2);
+    }
+  };
+}
+function create_if_block_3(ctx) {
+  let div;
+  let each_value = ctx[10];
+  let each_blocks = [];
+  for (let i = 0; i < each_value.length; i += 1) {
+    each_blocks[i] = create_each_block(get_each_context(ctx, each_value, i));
+  }
+  return {
+    c() {
+      div = element("div");
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        each_blocks[i].c();
+      }
+      attr(div, "class", "op-scrollable json-source svelte-guf68w");
+    },
+    m(target, anchor) {
+      insert(target, div, anchor);
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        if (each_blocks[i]) {
+          each_blocks[i].m(div, null);
+        }
+      }
+    },
+    p(ctx2, dirty) {
+      if (dirty & 1024) {
+        each_value = ctx2[10];
+        let i;
+        for (i = 0; i < each_value.length; i += 1) {
+          const child_ctx = get_each_context(ctx2, each_value, i);
+          if (each_blocks[i]) {
+            each_blocks[i].p(child_ctx, dirty);
+          } else {
+            each_blocks[i] = create_each_block(child_ctx);
+            each_blocks[i].c();
+            each_blocks[i].m(div, null);
+          }
+        }
+        for (; i < each_blocks.length; i += 1) {
+          each_blocks[i].d(1);
+        }
+        each_blocks.length = each_value.length;
+      }
+    },
+    d(detaching) {
+      if (detaching)
+        detach(div);
+      destroy_each(each_blocks, detaching);
+    }
+  };
+}
+function create_each_block(ctx) {
+  let span;
+  let t_value = ctx[25][1] + "";
+  let t2;
+  let span_class_value;
+  return {
+    c() {
+      span = element("span");
+      t2 = text(t_value);
+      attr(span, "class", span_class_value = null_to_empty(ctx[25][0] == import_diff_match_patch2.DIFF_DELETE ? "deleted" : ctx[25][0] == import_diff_match_patch2.DIFF_INSERT ? "added" : "normal") + " svelte-guf68w");
+    },
+    m(target, anchor) {
+      insert(target, span, anchor);
+      append(span, t2);
+    },
+    p(ctx2, dirty) {
+      if (dirty & 1024 && t_value !== (t_value = ctx2[25][1] + ""))
+        set_data(t2, t_value);
+      if (dirty & 1024 && span_class_value !== (span_class_value = null_to_empty(ctx2[25][0] == import_diff_match_patch2.DIFF_DELETE ? "deleted" : ctx2[25][0] == import_diff_match_patch2.DIFF_INSERT ? "added" : "normal") + " svelte-guf68w")) {
+        attr(span, "class", span_class_value);
+      }
+    },
+    d(detaching) {
+      if (detaching)
+        detach(span);
+    }
+  };
+}
+function create_if_block_2(ctx) {
+  let t0;
+  let t1_value = revStringToRevNumber(ctx[3]._rev) + "";
+  let t1;
+  return {
+    c() {
+      t0 = text("Rev:");
+      t1 = text(t1_value);
+    },
+    m(target, anchor) {
+      insert(target, t0, anchor);
+      insert(target, t1, anchor);
+    },
+    p(ctx2, dirty) {
+      if (dirty & 8 && t1_value !== (t1_value = revStringToRevNumber(ctx2[3]._rev) + ""))
+        set_data(t1, t1_value);
+    },
+    d(detaching) {
+      if (detaching)
+        detach(t0);
+      if (detaching)
+        detach(t1);
+    }
+  };
+}
+function create_if_block_1(ctx) {
+  let t0;
+  let t1_value = revStringToRevNumber(ctx[4]._rev) + "";
+  let t1;
+  return {
+    c() {
+      t0 = text("Rev:");
+      t1 = text(t1_value);
+    },
+    m(target, anchor) {
+      insert(target, t0, anchor);
+      insert(target, t1, anchor);
+    },
+    p(ctx2, dirty) {
+      if (dirty & 16 && t1_value !== (t1_value = revStringToRevNumber(ctx2[4]._rev) + ""))
+        set_data(t1, t1_value);
+    },
+    d(detaching) {
+      if (detaching)
+        detach(t0);
+      if (detaching)
+        detach(t1);
+    }
+  };
+}
+function create_fragment(ctx) {
+  let h1;
+  let t1;
+  let h2;
+  let t2;
+  let t3;
+  let if_block_anchor;
+  function select_block_type(ctx2, dirty) {
+    if (!ctx2[3] || !ctx2[4])
+      return create_if_block;
+    return create_else_block;
+  }
+  let current_block_type = select_block_type(ctx, -1);
+  let if_block = current_block_type(ctx);
+  return {
+    c() {
+      h1 = element("h1");
+      h1.textContent = "Conflicted settings";
+      t1 = space();
+      h2 = element("h2");
+      t2 = text(ctx[0]);
+      t3 = space();
+      if_block.c();
+      if_block_anchor = empty();
+      attr(h1, "class", "svelte-guf68w");
+      attr(h2, "class", "svelte-guf68w");
+    },
+    m(target, anchor) {
+      insert(target, h1, anchor);
+      insert(target, t1, anchor);
+      insert(target, h2, anchor);
+      append(h2, t2);
+      insert(target, t3, anchor);
+      if_block.m(target, anchor);
+      insert(target, if_block_anchor, anchor);
+    },
+    p(ctx2, [dirty]) {
+      if (dirty & 1)
+        set_data(t2, ctx2[0]);
+      if (current_block_type === (current_block_type = select_block_type(ctx2, dirty)) && if_block) {
+        if_block.p(ctx2, dirty);
+      } else {
+        if_block.d(1);
+        if_block = current_block_type(ctx2);
+        if (if_block) {
+          if_block.c();
+          if_block.m(if_block_anchor.parentNode, if_block_anchor);
+        }
+      }
+    },
+    i: noop,
+    o: noop,
+    d(detaching) {
+      if (detaching)
+        detach(h1);
+      if (detaching)
+        detach(t1);
+      if (detaching)
+        detach(h2);
+      if (detaching)
+        detach(t3);
+      if_block.d(detaching);
+      if (detaching)
+        detach(if_block_anchor);
+    }
+  };
+}
+function revStringToRevNumber(rev2) {
+  return rev2.split("-")[0];
+}
+function instance($$self, $$props, $$invalidate) {
+  let mergedObjs;
+  let selectedObj;
+  let modes;
+  let { docs = [] } = $$props;
+  let { callback = async (_, __) => {
+    Promise.resolve();
+  } } = $$props;
+  let { filename = "" } = $$props;
+  let { nameA = "A" } = $$props;
+  let { nameB = "B" } = $$props;
+  let { defaultSelect = "" } = $$props;
+  let docA = void 0;
+  let docB = void 0;
+  let docAContent = "";
+  let docBContent = "";
+  let objA = {};
+  let objB = {};
+  let objAB = {};
+  let objBA = {};
+  let diffs;
+  let mode = defaultSelect;
+  function docToString(doc) {
+    return doc.datatype == "plain" ? getDocData(doc.data) : base64ToString(doc.data);
+  }
+  function getDiff(left, right) {
+    const dmp = new import_diff_match_patch2.diff_match_patch();
+    const mapLeft = dmp.diff_linesToChars_(left, right);
+    const diffLeftSrc = dmp.diff_main(mapLeft.chars1, mapLeft.chars2, false);
+    dmp.diff_charsToLines_(diffLeftSrc, mapLeft.lineArray);
+    return diffLeftSrc;
+  }
+  function getJsonDiff(a2, b) {
+    return getDiff(JSON.stringify(a2, null, 2), JSON.stringify(b, null, 2));
+  }
+  function apply() {
+    if (docA._id == docB._id) {
+      if (mode == "A")
+        return callback(docA._rev, null);
+      if (mode == "B")
+        return callback(docB._rev, null);
+    } else {
+      if (mode == "A")
+        return callback(null, docToString(docA));
+      if (mode == "B")
+        return callback(null, docToString(docB));
+    }
+    if (mode == "BA")
+      return callback(null, JSON.stringify(objBA, null, 2));
+    if (mode == "AB")
+      return callback(null, JSON.stringify(objAB, null, 2));
+    callback(null, null);
+  }
+  const $$binding_groups = [[]];
+  function input_change_handler() {
+    mode = this.__value;
+    $$invalidate(7, mode);
+  }
+  $$self.$$set = ($$props2) => {
+    if ("docs" in $$props2)
+      $$invalidate(13, docs = $$props2.docs);
+    if ("callback" in $$props2)
+      $$invalidate(14, callback = $$props2.callback);
+    if ("filename" in $$props2)
+      $$invalidate(0, filename = $$props2.filename);
+    if ("nameA" in $$props2)
+      $$invalidate(1, nameA = $$props2.nameA);
+    if ("nameB" in $$props2)
+      $$invalidate(2, nameB = $$props2.nameB);
+    if ("defaultSelect" in $$props2)
+      $$invalidate(15, defaultSelect = $$props2.defaultSelect);
+  };
+  $$self.$$.update = () => {
+    if ($$self.$$.dirty & 991352) {
+      $: {
+        if (docs && docs.length >= 1) {
+          if (docs[0].mtime < docs[1].mtime) {
+            $$invalidate(3, docA = docs[0]);
+            $$invalidate(4, docB = docs[1]);
+          } else {
+            $$invalidate(3, docA = docs[1]);
+            $$invalidate(4, docB = docs[0]);
+          }
+          $$invalidate(5, docAContent = docToString(docA));
+          $$invalidate(6, docBContent = docToString(docB));
+          try {
+            $$invalidate(16, objA = false);
+            $$invalidate(17, objB = false);
+            $$invalidate(16, objA = JSON.parse(docAContent));
+            $$invalidate(17, objB = JSON.parse(docBContent));
+            $$invalidate(18, objAB = mergeObject(objA, objB));
+            $$invalidate(19, objBA = mergeObject(objB, objA));
+            if (JSON.stringify(objAB) == JSON.stringify(objBA)) {
+              $$invalidate(19, objBA = false);
+            }
+          } catch (ex) {
+            $$invalidate(19, objBA = false);
+            $$invalidate(18, objAB = false);
+          }
+        }
+      }
+    }
+    if ($$self.$$.dirty & 983040) {
+      $:
+        $$invalidate(9, mergedObjs = {
+          "": false,
+          A: objA,
+          B: objB,
+          AB: objAB,
+          BA: objBA
+        });
+    }
+    if ($$self.$$.dirty & 640) {
+      $:
+        $$invalidate(8, selectedObj = mode in mergedObjs ? mergedObjs[mode] : {});
+    }
+    if ($$self.$$.dirty & 65792) {
+      $: {
+        $$invalidate(10, diffs = getJsonDiff(objA, selectedObj));
+      }
+    }
+    if ($$self.$$.dirty & 6) {
+      $:
+        $$invalidate(11, modes = [
+          ["", "Not now"],
+          ["A", nameA || "A"],
+          ["B", nameB || "B"],
+          ["AB", `${nameA || "A"} + ${nameB || "B"}`],
+          ["BA", `${nameB || "B"} + ${nameA || "A"}`]
+        ]);
+    }
+  };
+  return [
+    filename,
+    nameA,
+    nameB,
+    docA,
+    docB,
+    docAContent,
+    docBContent,
+    mode,
+    selectedObj,
+    mergedObjs,
+    diffs,
+    modes,
+    apply,
+    docs,
+    callback,
+    defaultSelect,
+    objA,
+    objB,
+    objAB,
+    objBA,
+    input_change_handler,
+    $$binding_groups
+  ];
+}
+var JsonResolvePane = class extends SvelteComponent {
+  constructor(options) {
+    super();
+    init2(
+      this,
+      options,
+      instance,
+      create_fragment,
+      safe_not_equal,
+      {
+        docs: 13,
+        callback: 14,
+        filename: 0,
+        nameA: 1,
+        nameB: 2,
+        defaultSelect: 15
+      },
+      add_css
+    );
+  }
+};
+var JsonResolvePane_default = JsonResolvePane;
+
+// src/JsonResolveModal.ts
+var JsonResolveModal = class extends import_obsidian.Modal {
+  constructor(app2, filename, docs, callback, nameA, nameB, defaultSelect) {
+    super(app2);
+    this.callback = callback;
+    this.filename = filename;
+    this.docs = docs;
+    this.nameA = nameA;
+    this.nameB = nameB;
+    this.defaultSelect = defaultSelect;
+  }
+  async UICallback(keepRev, mergedStr) {
+    this.close();
+    await this.callback(keepRev, mergedStr);
+    this.callback = null;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    if (this.component == null) {
+      this.component = new JsonResolvePane_default({
+        target: contentEl,
+        props: {
+          docs: this.docs,
+          filename: this.filename,
+          nameA: this.nameA,
+          nameB: this.nameB,
+          defaultSelect: this.defaultSelect,
+          callback: (keepRev, mergedStr) => this.UICallback(keepRev, mergedStr)
+        }
+      });
+    }
+    return;
+  }
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+    if (this.callback != null) {
+      this.callback(null);
+    }
+    if (this.component != null) {
+      this.component.$destroy();
+      this.component = null;
+    }
+  }
+};
+
+// src/CmdConfigSync.ts
+function serialize(obj) {
+  return JSON.stringify(obj, null, 1);
+}
+function deserialize(str, def) {
+  try {
+    return JSON.parse(str);
+  } catch (ex) {
+    try {
+      return (0, import_obsidian.parseYaml)(str);
+    } catch (ex2) {
+      return def;
+    }
+  }
+}
+var pluginList = writable([]);
+var pluginIsEnumerating = writable(false);
+var encoder = new TextEncoder();
+var hashString2 = async (key) => {
+  const buff = encoder.encode(key);
+  const digest = await crypto.subtle.digest("SHA-256", buff);
+  return uint8ArrayToHexString(new Uint8Array(digest));
+};
+var ConfigSync = class extends LiveSyncCommands {
   constructor() {
     super(...arguments);
+    this.confirmPopup = null;
     this.pluginDialog = null;
-    this.periodicPluginSweepProcessor = new PeriodicProcessor(this.plugin, async () => await this.sweepPlugin(false));
+    this.periodicPluginSweepProcessor = new PeriodicProcessor(this.plugin, async () => await this.scanAllConfigFiles(false));
+    this.pluginList = [];
+    this.recentProcessedInternalFiles = [];
   }
-  get deviceAndVaultName() {
-    return this.plugin.deviceAndVaultName;
+  get kvDB() {
+    return this.plugin.kvDB;
+  }
+  ensureDirectoryEx(fullPath) {
+    return this.plugin.ensureDirectoryEx(fullPath);
   }
   showPluginSyncModal() {
+    if (!this.settings.usePluginSync) {
+      return;
+    }
     if (this.pluginDialog != null) {
       this.pluginDialog.open();
     } else {
@@ -15714,314 +16970,758 @@ var PluginAndTheirSettings = class extends LiveSyncCommands {
       this.pluginDialog = null;
     }
   }
-  onload() {
-    this.plugin.addCommand({
-      id: "livesync-plugin-dialog",
-      name: "Show Plugins and their settings",
-      callback: () => {
-        this.showPluginSyncModal();
-      }
-    });
-  }
   onunload() {
     var _a;
     this.hidePluginSyncModal();
     (_a = this.periodicPluginSweepProcessor) == null ? void 0 : _a.disable();
   }
-  parseReplicationResultItem(doc) {
-    if (isPluginMetadata(doc._id)) {
-      if (this.settings.notifyPluginOrSettingUpdated) {
-        this.triggerCheckPluginUpdate();
-        return true;
+  onload() {
+    this.plugin.addCommand({
+      id: "livesync-plugin-dialog-ex",
+      name: "Show customization sync dialog",
+      callback: () => {
+        this.showPluginSyncModal();
+      }
+    });
+  }
+  getFileCategory(filePath) {
+    if (filePath.split("/").length == 2 && filePath.endsWith(".json"))
+      return "CONFIG";
+    if (filePath.split("/").length == 4 && filePath.startsWith(`${this.app.vault.configDir}/themes/`))
+      return "THEME";
+    if (filePath.startsWith(`${this.app.vault.configDir}/snippets/`) && filePath.endsWith(".css"))
+      return "SNIPPET";
+    if (filePath.startsWith(`${this.app.vault.configDir}/plugins/`)) {
+      if (filePath.endsWith("/styles.css") || filePath.endsWith("/manifest.json") || filePath.endsWith("/main.js")) {
+        return "PLUGIN_MAIN";
+      } else if (filePath.endsWith("/data.json")) {
+        return "PLUGIN_DATA";
+      } else {
+        return "";
       }
     }
-    return false;
+    return "";
   }
-  async beforeReplicate(showMessage) {
-    if (this.settings.autoSweepPlugins) {
-      await this.sweepPlugin(showMessage);
-    }
-  }
-  async onResume() {
-    if (this.plugin.suspended)
-      return;
-    if (this.settings.autoSweepPlugins) {
-      await this.sweepPlugin(false);
-    }
-    this.periodicPluginSweepProcessor.enable(this.settings.autoSweepPluginsPeriodic && !this.settings.watchInternalFileChanges ? PERIODIC_PLUGIN_SWEEP * 1e3 : 0);
+  isTargetPath(filePath) {
+    if (!filePath.startsWith(this.app.vault.configDir))
+      return false;
+    return this.getFileCategory(filePath) != "";
   }
   async onInitializeDatabase(showNotice) {
     if (this.settings.usePluginSync) {
       try {
-        Logger("Scanning plugins...");
-        await this.sweepPlugin(showNotice);
-        Logger("Scanning plugins done");
+        Logger("Scanning customizations...");
+        await this.scanAllConfigFiles(showNotice);
+        Logger("Scanning customizations : done");
       } catch (ex) {
-        Logger("Scanning plugins  failed");
+        Logger("Scanning customizations : failed");
         Logger(ex, LOG_LEVEL.VERBOSE);
       }
     }
+  }
+  async beforeReplicate(showNotice) {
+    if (this.settings.autoSweepPlugins && this.settings.usePluginSync) {
+      await this.scanAllConfigFiles(showNotice);
+    }
+  }
+  async onResume() {
+    if (this.plugin.suspended) {
+      return;
+    }
+    if (this.settings.autoSweepPlugins && this.settings.usePluginSync) {
+      await this.scanAllConfigFiles(false);
+    }
+    this.periodicPluginSweepProcessor.enable(this.settings.autoSweepPluginsPeriodic && !this.settings.watchInternalFileChanges ? PERIODIC_PLUGIN_SWEEP * 1e3 : 0);
+  }
+  async reloadPluginList(showMessage) {
+    this.pluginList = [];
+    pluginList.set(this.pluginList);
+    await this.updatePluginList(showMessage);
+  }
+  async updatePluginList(showMessage, updatedDocumentPath) {
+    const logLevel = showMessage ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO;
+    if (!this.settings.usePluginSync) {
+      this.pluginList = [];
+      pluginList.set(this.pluginList);
+      return;
+    }
+    await runWithLock("update-plugin-list", false, async () => {
+      const entries = [];
+      const plugins = this.localDatabase.findEntries(ICXHeader + "", `${ICXHeader}\u{10FFFF}`, { include_docs: true });
+      const semaphore = Semaphore(4);
+      const para = Parallels();
+      let count = 0;
+      pluginIsEnumerating.set(true);
+      let processed = false;
+      try {
+        for await (const plugin2 of plugins) {
+          const path = plugin2.path || this.getPath(plugin2);
+          if (updatedDocumentPath && updatedDocumentPath != path) {
+            continue;
+          }
+          processed = true;
+          const oldEntry = this.pluginList.find((e2) => e2.documentPath == path);
+          if (oldEntry && oldEntry.mtime == plugin2.mtime)
+            continue;
+          await para.wait(5);
+          para.add((async (v) => {
+            const release = await semaphore.acquire(1);
+            try {
+              count++;
+              if (count % 10 == 0)
+                Logger(`Enumerating files... ${count}`, logLevel, "get-plugins");
+              Logger(`plugin-${path}`, LOG_LEVEL.VERBOSE);
+              const wx = await this.localDatabase.getDBEntry(path, null, false, false);
+              if (wx) {
+                const data = deserialize(getDocData(wx.data), {});
+                const xFiles = [];
+                for (const file of data.files) {
+                  const work = { ...file };
+                  const tempStr = getDocData(work.data);
+                  work.data = [await hashString2(tempStr)];
+                  xFiles.push(work);
+                }
+                entries.push({
+                  ...data,
+                  documentPath: this.getPath(wx),
+                  files: xFiles
+                });
+              }
+            } catch (ex) {
+              Logger(`Something happened at enumerating customization :${v.path}`, LOG_LEVEL.NOTICE);
+              console.warn(ex);
+            } finally {
+              release();
+            }
+          })(plugin2));
+        }
+        await para.all();
+        let newList = [...this.pluginList];
+        for (const item of entries) {
+          newList = newList.filter((x) => x.documentPath != item.documentPath);
+          newList.push(item);
+        }
+        if (updatedDocumentPath != "" && !processed)
+          newList = newList.filter((e2) => e2.documentPath != updatedDocumentPath);
+        this.pluginList = newList;
+        pluginList.set(newList);
+        Logger(`All files enumerated`, logLevel, "get-plugins");
+      } finally {
+        pluginIsEnumerating.set(false);
+      }
+    });
+  }
+  async compareUsingDisplayData(dataA, dataB) {
+    const docA = await this.localDatabase.getDBEntry(dataA.documentPath);
+    const docB = await this.localDatabase.getDBEntry(dataB.documentPath);
+    if (docA && docB) {
+      const pluginDataA = deserialize(getDocData(docA.data), {});
+      pluginDataA.documentPath = dataA.documentPath;
+      const pluginDataB = deserialize(getDocData(docB.data), {});
+      pluginDataB.documentPath = dataB.documentPath;
+      return await this.showJSONMergeDialogAndMerge(docA, docB, pluginDataA, pluginDataB);
+    }
+    return false;
+  }
+  showJSONMergeDialogAndMerge(docA, docB, pluginDataA, pluginDataB) {
+    const fileA = { ...pluginDataA.files[0], ctime: pluginDataA.files[0].mtime, _id: `${pluginDataA.documentPath}` };
+    const fileB = pluginDataB.files[0];
+    const docAx = { ...docA, ...fileA }, docBx = { ...docB, ...fileB };
+    return runWithLock("config:merge-data", false, () => new Promise((res2) => {
+      Logger("Opening data-merging dialog", LOG_LEVEL.VERBOSE);
+      const path = stripAllPrefixes(docAx.path.split("/").slice(-1).join("/"));
+      const modal = new JsonResolveModal(this.app, path, [docAx, docBx], async (keep, result) => {
+        if (result == null)
+          return res2(false);
+        try {
+          res2(await this.applyData(pluginDataA, result));
+        } catch (ex) {
+          Logger("Could not apply merged file");
+          Logger(ex, LOG_LEVEL.VERBOSE);
+          res2(false);
+        }
+      }, "\u{1F4E1}", "\u{1F6F0}\uFE0F", "B");
+      modal.open();
+    }));
+  }
+  async applyData(data, content) {
+    Logger(`Applying ${data.displayName || data.name}..`);
+    const baseDir = this.app.vault.configDir;
+    try {
+      if (!data.documentPath)
+        throw "InternalError: Document path not exist";
+      const dx = await this.localDatabase.getDBEntry(data.documentPath);
+      if (dx == false) {
+        throw "Not found on database";
+      }
+      const loadedData = deserialize(getDocData(dx.data), {});
+      for (const f3 of loadedData.files) {
+        Logger(`Applying ${f3.filename} of ${data.displayName || data.name}..`);
+        try {
+          const path = `${baseDir}/${f3.filename}`;
+          await this.ensureDirectoryEx(path);
+          if (!content) {
+            const dt = base64ToArrayBuffer(f3.data);
+            await this.app.vault.adapter.writeBinary(path, dt);
+          } else {
+            await this.app.vault.adapter.write(path, content);
+          }
+          Logger(`Applying ${f3.filename} of ${data.displayName || data.name}.. Done`);
+        } catch (ex) {
+          Logger(`Applying ${f3.filename} of ${data.displayName || data.name}.. Failed`);
+          Logger(ex, LOG_LEVEL.VERBOSE);
+        }
+      }
+      const uPath = `${baseDir}/${loadedData.files[0].filename}`;
+      await this.storeCustomizationFiles(uPath);
+      await this.updatePluginList(true, uPath);
+      await delay(100);
+      Logger(`Config ${data.displayName || data.name} has been applied`, LOG_LEVEL.NOTICE);
+      if (data.category == "PLUGIN_DATA" || data.category == "PLUGIN_MAIN") {
+        const manifests = Object.values(this.app.plugins.manifests);
+        const enabledPlugins = this.app.plugins.enabledPlugins;
+        const pluginManifest = manifests.find((manifest) => enabledPlugins.has(manifest.id) && manifest.dir == `${baseDir}/plugins/${data.name}`);
+        if (pluginManifest) {
+          Logger(`Unloading plugin: ${pluginManifest.name}`, LOG_LEVEL.NOTICE, "plugin-reload-" + pluginManifest.id);
+          await this.app.plugins.unloadPlugin(pluginManifest.id);
+          await this.app.plugins.loadPlugin(pluginManifest.id);
+          Logger(`Plugin reloaded: ${pluginManifest.name}`, LOG_LEVEL.NOTICE, "plugin-reload-" + pluginManifest.id);
+        }
+      } else if (data.category == "CONFIG") {
+        scheduleTask("configReload", 250, async () => {
+          if (await askYesNo(this.app, "Do you want to restart and reload Obsidian now?") == "yes") {
+            this.app.commands.executeCommandById("app:reload");
+          }
+        });
+      }
+      return true;
+    } catch (ex) {
+      Logger(`Applying ${data.displayName || data.name}.. Failed`);
+      Logger(ex, LOG_LEVEL.VERBOSE);
+      return false;
+    }
+  }
+  async deleteData(data) {
+    try {
+      if (data.documentPath) {
+        await this.deleteConfigOnDatabase(data.documentPath);
+        await this.updatePluginList(false, data.documentPath);
+        Logger(`Delete: ${data.documentPath}`, LOG_LEVEL.NOTICE);
+      }
+      return true;
+    } catch (ex) {
+      Logger(`Failed to delete: ${data.documentPath}`, LOG_LEVEL.NOTICE);
+      return false;
+    }
+  }
+  async parseReplicationResultItem(docs) {
+    if (docs._id.startsWith(ICXHeader)) {
+      if (this.plugin.settings.usePluginSync) {
+        await this.updatePluginList(false, docs.path ? docs.path : this.getPath(docs));
+      }
+      if (this.plugin.settings.usePluginSync && this.plugin.settings.notifyPluginOrSettingUpdated) {
+        if (!this.pluginDialog || this.pluginDialog && !this.pluginDialog.isOpened()) {
+          const fragment = createFragment((doc) => {
+            doc.createEl("span", null, (a2) => {
+              a2.appendText(`Some configuration has been arrived, Press `);
+              a2.appendChild(a2.createEl("a", null, (anchor) => {
+                anchor.text = "HERE";
+                anchor.addEventListener("click", () => {
+                  this.showPluginSyncModal();
+                });
+              }));
+              a2.appendText(` to open the config sync dialog , or press elsewhere to dismiss this message.`);
+            });
+          });
+          const updatedPluginKey = "popupUpdated-plugins";
+          scheduleTask(updatedPluginKey, 1e3, async () => {
+            var _a;
+            const popup = await memoIfNotExist(updatedPluginKey, () => new import_obsidian.Notice(fragment, 0));
+            const isShown = (_a = popup == null ? void 0 : popup.noticeEl) == null ? void 0 : _a.isShown();
+            if (!isShown) {
+              memoObject(updatedPluginKey, new import_obsidian.Notice(fragment, 0));
+            }
+            scheduleTask(updatedPluginKey + "-close", 2e4, () => {
+              var _a2;
+              const popup2 = retrieveMemoObject(updatedPluginKey);
+              if (!popup2)
+                return;
+              if ((_a2 = popup2 == null ? void 0 : popup2.noticeEl) == null ? void 0 : _a2.isShown()) {
+                popup2.hide();
+              }
+              disposeMemoObject(updatedPluginKey);
+            });
+          });
+        }
+      }
+      return true;
+    }
+    return false;
   }
   async realizeSettingSyncMode() {
     var _a;
     (_a = this.periodicPluginSweepProcessor) == null ? void 0 : _a.disable();
     if (this.plugin.suspended)
       return;
+    if (!this.settings.usePluginSync) {
+      return;
+    }
     if (this.settings.autoSweepPlugins) {
-      await this.sweepPlugin(false);
+      await this.scanAllConfigFiles(false);
     }
     this.periodicPluginSweepProcessor.enable(this.settings.autoSweepPluginsPeriodic && !this.settings.watchInternalFileChanges ? PERIODIC_PLUGIN_SWEEP * 1e3 : 0);
+    return;
   }
-  triggerCheckPluginUpdate() {
-    (async () => await this.checkPluginUpdate())();
-  }
-  async getPluginList() {
-    const db = this.localDatabase.localDatabase;
-    const docList = await db.allDocs({ startkey: PSCHeader, endkey: PSCHeaderEnd, include_docs: false });
-    const oldDocs = (await Promise.all(docList.rows.map(async (e2) => await this.localDatabase.getDBEntry(e2.id)))).filter((e2) => e2 !== false).map((e2) => JSON.parse(getDocData(e2.data)));
-    const plugins = {};
-    const allPlugins = {};
-    const thisDevicePlugins = {};
-    for (const v of oldDocs) {
-      if (typeof plugins[v.deviceVaultName] === "undefined") {
-        plugins[v.deviceVaultName] = [];
-      }
-      plugins[v.deviceVaultName].push(v);
-      allPlugins[v._id] = v;
-      if (v.deviceVaultName == this.deviceAndVaultName) {
-        thisDevicePlugins[v.manifest.id] = v;
-      }
+  async makeEntryFromFile(path) {
+    const stat = await this.app.vault.adapter.stat(path);
+    let version2;
+    let displayName;
+    if (!stat) {
+      return false;
     }
-    return { plugins, allPlugins, thisDevicePlugins };
-  }
-  async checkPluginUpdate() {
-    var _a, _b;
-    if (!this.plugin.settings.usePluginSync)
-      return;
-    await this.sweepPlugin(false);
-    const { allPlugins, thisDevicePlugins } = await this.getPluginList();
-    const arrPlugins = Object.values(allPlugins);
-    let updateFound = false;
-    for (const plugin2 of arrPlugins) {
-      const ownPlugin = thisDevicePlugins[plugin2.manifest.id];
-      if (ownPlugin) {
-        const remoteVersion = versionNumberString2Number(plugin2.manifest.version);
-        const ownVersion = versionNumberString2Number(ownPlugin.manifest.version);
-        if (remoteVersion > ownVersion) {
-          updateFound = true;
-        }
-        if ((plugin2.mtime / 1e3 | 0) > (ownPlugin.mtime / 1e3 | 0) && ((_a = plugin2.dataJson) != null ? _a : "") != ((_b = ownPlugin.dataJson) != null ? _b : "")) {
-          updateFound = true;
+    const contentBin = await this.app.vault.adapter.readBinary(path);
+    let content;
+    try {
+      content = await arrayBufferToBase64(contentBin);
+      if (path.toLowerCase().endsWith("/manifest.json")) {
+        const v = readString(new Uint8Array(contentBin));
+        try {
+          const json = JSON.parse(v);
+          if ("version" in json) {
+            version2 = `${json.version}`;
+          }
+          if ("name" in json) {
+            displayName = `${json.name}`;
+          }
+        } catch (ex) {
+          Logger(`Configuration sync data: ${path} looks like manifest, but could not read the version`, LOG_LEVEL.INFO);
         }
       }
+    } catch (ex) {
+      Logger(`The file ${path} could not be encoded`);
+      Logger(ex, LOG_LEVEL.VERBOSE);
+      return false;
     }
-    if (updateFound) {
-      const fragment = createFragment((doc) => {
-        doc.createEl("a", null, (a2) => {
-          a2.text = "There're some new plugins or their settings";
-          a2.addEventListener("click", () => this.showPluginSyncModal());
-        });
-      });
-      NewNotice(fragment, 1e4);
-    } else {
-      Logger("Everything is up to date.", LOG_LEVEL.NOTICE);
-    }
+    const mtime = stat.mtime;
+    return {
+      filename: path.substring(this.app.vault.configDir.length + 1),
+      data: content,
+      mtime,
+      size: stat.size,
+      version: version2,
+      displayName
+    };
   }
-  async sweepPlugin(showMessage = false, specificPluginPath = "") {
-    var _a, _b;
-    if (!this.settings.usePluginSync)
-      return;
-    if (!this.localDatabase.isReady)
-      return;
-    const pl = this.app.plugins;
-    const manifests = Object.values(pl.manifests);
-    let specificPlugin = "";
-    if (specificPluginPath != "") {
-      specificPlugin = (_b = (_a = manifests.find((e2) => e2.dir.endsWith("/" + specificPluginPath))) == null ? void 0 : _a.id) != null ? _b : "";
-    }
-    await runWithLock("sweepplugin", true, async () => {
-      const logLevel = showMessage ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO;
-      if (!this.deviceAndVaultName) {
-        Logger("You have to set your device and vault name.", LOG_LEVEL.NOTICE);
+  filenameToUnifiedKey(path, termOverRide) {
+    const term = termOverRide || this.plugin.deviceAndVaultName;
+    const category = this.getFileCategory(path);
+    const name = category == "CONFIG" || category == "SNIPPET" ? path.split("/").slice(-1)[0] : category == "PLUGIN_ETC" ? path.split("/").slice(-2).join("/") : path.split("/").slice(-2)[0];
+    return `${ICXHeader}${term}/${category}/${name}.md`;
+  }
+  async storeCustomizationFiles(path, termOverRide) {
+    const term = termOverRide || this.plugin.deviceAndVaultName;
+    const vf = this.filenameToUnifiedKey(path, term);
+    return await runWithLock(`plugin-${vf}`, false, async () => {
+      const category = this.getFileCategory(path);
+      let mtime = 0;
+      let fileTargets = [];
+      const name = category == "CONFIG" || category == "SNIPPET" ? path.split("/").reverse()[0] : path.split("/").reverse()[1];
+      const parentPath = path.split("/").slice(0, -1).join("/");
+      const prefixedFileName = this.filenameToUnifiedKey(path, term);
+      const id = await this.path2id(prefixedFileName);
+      const dt = {
+        category,
+        files: [],
+        name,
+        mtime: 0,
+        term
+      };
+      if (category == "CONFIG" || category == "SNIPPET" || category == "PLUGIN_ETC" || category == "PLUGIN_DATA") {
+        fileTargets = [path];
+        if (category == "PLUGIN_ETC") {
+          dt.displayName = path.split("/").slice(-1).join("/");
+        }
+      } else if (category == "PLUGIN_MAIN") {
+        fileTargets = ["manifest.json", "main.js", "styles.css"].map((e2) => `${parentPath}/${e2}`);
+      } else if (category == "THEME") {
+        fileTargets = ["manifest.json", "theme.css"].map((e2) => `${parentPath}/${e2}`);
+      }
+      for (const target of fileTargets) {
+        const data = await this.makeEntryFromFile(target);
+        if (data == false) {
+          continue;
+        }
+        if (data.version) {
+          dt.version = data.version;
+        }
+        if (data.displayName) {
+          dt.displayName = data.displayName;
+        }
+        mtime = mtime == 0 ? data.mtime : (data.mtime + mtime) / 2;
+        dt.files.push(data);
+      }
+      dt.mtime = mtime;
+      if (dt.files.length == 0) {
+        Logger(`Nothing left: deleting.. ${path}`);
+        await this.deleteConfigOnDatabase(prefixedFileName);
+        await this.updatePluginList(false, prefixedFileName);
         return;
       }
-      Logger("Scanning plugins", logLevel);
-      const db = this.localDatabase.localDatabase;
-      const oldDocs = await db.allDocs({
-        startkey: `ps:${this.deviceAndVaultName}-${specificPlugin}`,
-        endkey: `ps:${this.deviceAndVaultName}-${specificPlugin}\u{10FFFF}`,
-        include_docs: true
-      });
-      const procs = manifests.map(
-        async (m) => {
-          const pluginDataEntryID = `ps:${this.deviceAndVaultName}-${m.id}`;
-          try {
-            if (specificPlugin && m.id != specificPlugin) {
-              return;
-            }
-            Logger(`Reading plugin:${m.name}(${m.id})`, LOG_LEVEL.VERBOSE);
-            const path = (0, import_obsidian.normalizePath)(m.dir) + "/";
-            const adapter = this.app.vault.adapter;
-            const files = ["manifest.json", "main.js", "styles.css", "data.json"];
-            const pluginData = {};
-            for (const file of files) {
-              const thePath = path + file;
-              if (await adapter.exists(thePath)) {
-                pluginData[file] = await adapter.read(thePath);
-              }
-            }
-            let mtime = 0;
-            if (await adapter.exists(path + "/data.json")) {
-              mtime = (await adapter.stat(path + "/data.json")).mtime;
-            }
-            const p = {
-              _id: pluginDataEntryID,
-              dataJson: pluginData["data.json"],
-              deviceVaultName: this.deviceAndVaultName,
-              mainJs: pluginData["main.js"],
-              styleCss: pluginData["styles.css"],
-              manifest: m,
-              manifestJson: pluginData["manifest.json"],
-              mtime,
-              type: "plugin"
-            };
-            const d = {
-              _id: p._id,
-              data: JSON.stringify(p),
-              ctime: mtime,
-              mtime,
-              size: 0,
-              children: [],
-              datatype: "plain",
-              type: "plain"
-            };
-            Logger(`check diff:${m.name}(${m.id})`, LOG_LEVEL.VERBOSE);
-            await runWithLock("plugin-" + m.id, false, async () => {
-              const old = await this.localDatabase.getDBEntry(p._id, null, false, false);
-              if (old !== false) {
-                const oldData = { data: old.data, deleted: old._deleted };
-                const newData = { data: d.data, deleted: d._deleted };
-                if (isDocContentSame(oldData.data, newData.data) && oldData.deleted == newData.deleted) {
-                  Logger(`Nothing changed:${m.name}`);
-                  return;
-                }
-              }
-              await this.localDatabase.putDBEntry(d);
-              Logger(`Plugin saved:${m.name}`, logLevel);
-            });
-          } catch (ex) {
-            Logger(`Plugin save failed:${m.name}`, LOG_LEVEL.NOTICE);
-          } finally {
-            oldDocs.rows = oldDocs.rows.filter((e2) => e2.id != pluginDataEntryID);
-          }
-        }
-      );
-      await Promise.all(procs);
-      const delDocs = oldDocs.rows.map((e2) => {
-        if (e2.doc.type == "newnote" || e2.doc.type == "plain") {
-          e2.doc.deleted = true;
-          if (this.settings.deleteMetadataOfDeletedFiles) {
-            e2.doc._deleted = true;
-          }
+      const content = serialize(dt);
+      try {
+        const old = await this.localDatabase.getDBEntryMeta(prefixedFileName, null, false);
+        let saveData;
+        if (old === false) {
+          saveData = {
+            _id: id,
+            path: prefixedFileName,
+            data: content,
+            mtime,
+            ctime: mtime,
+            datatype: "newnote",
+            size: content.length,
+            children: [],
+            deleted: false,
+            type: "newnote"
+          };
         } else {
-          e2.doc._deleted = true;
+          if (old.mtime == mtime) {
+            return true;
+          }
+          saveData = {
+            ...old,
+            data: content,
+            mtime,
+            size: content.length,
+            datatype: "newnote",
+            children: [],
+            deleted: false,
+            type: "newnote"
+          };
         }
-        return e2.doc;
-      });
-      Logger(`Deleting old plugin:(${delDocs.length})`, LOG_LEVEL.VERBOSE);
-      await db.bulkDocs(delDocs);
-      Logger(`Scan plugin done.`, logLevel);
-    });
-  }
-  async applyPluginData(plugin2) {
-    await runWithLock("plugin-" + plugin2.manifest.id, false, async () => {
-      const pluginTargetFolderPath = (0, import_obsidian.normalizePath)(plugin2.manifest.dir) + "/";
-      const adapter = this.app.vault.adapter;
-      const stat = this.app.plugins.enabledPlugins.has(plugin2.manifest.id) == true;
-      if (stat) {
-        await this.app.plugins.unloadPlugin(plugin2.manifest.id);
-        Logger(`Unload plugin:${plugin2.manifest.id}`, LOG_LEVEL.NOTICE);
-      }
-      if (plugin2.dataJson)
-        await adapter.write(pluginTargetFolderPath + "data.json", plugin2.dataJson);
-      Logger("wrote:" + pluginTargetFolderPath + "data.json", LOG_LEVEL.NOTICE);
-      if (stat) {
-        await this.app.plugins.loadPlugin(plugin2.manifest.id);
-        Logger(`Load plugin:${plugin2.manifest.id}`, LOG_LEVEL.NOTICE);
+        const ret = await this.localDatabase.putDBEntry(saveData);
+        await this.updatePluginList(false, saveData.path);
+        Logger(`STORAGE --> DB:${prefixedFileName}: (config) Done`);
+        return ret;
+      } catch (ex) {
+        Logger(`STORAGE --> DB:${prefixedFileName}: (config) Failed`);
+        Logger(ex, LOG_LEVEL.VERBOSE);
+        return false;
       }
     });
   }
-  async applyPlugin(plugin2) {
-    await runWithLock("plugin-" + plugin2.manifest.id, false, async () => {
-      const stat = this.app.plugins.enabledPlugins.has(plugin2.manifest.id) == true;
-      if (stat) {
-        await this.app.plugins.unloadPlugin(plugin2.manifest.id);
-        Logger(`Unload plugin:${plugin2.manifest.id}`, LOG_LEVEL.NOTICE);
-      }
-      const pluginTargetFolderPath = (0, import_obsidian.normalizePath)(plugin2.manifest.dir) + "/";
-      const adapter = this.app.vault.adapter;
-      if (await adapter.exists(pluginTargetFolderPath) === false) {
-        await adapter.mkdir(pluginTargetFolderPath);
-      }
-      await adapter.write(pluginTargetFolderPath + "main.js", plugin2.mainJs);
-      await adapter.write(pluginTargetFolderPath + "manifest.json", plugin2.manifestJson);
-      if (plugin2.styleCss)
-        await adapter.write(pluginTargetFolderPath + "styles.css", plugin2.styleCss);
-      if (stat) {
-        await this.app.plugins.loadPlugin(plugin2.manifest.id);
-        Logger(`Load plugin:${plugin2.manifest.id}`, LOG_LEVEL.NOTICE);
+  async watchVaultRawEventsAsync(path) {
+    if (!this.settings.usePluginSync)
+      return false;
+    if (!this.isTargetPath(path))
+      return false;
+    const stat = await this.app.vault.adapter.stat(path);
+    if (stat && stat.type != "file")
+      return false;
+    const storageMTime = ~~((stat && stat.mtime || 0) / 1e3);
+    const key = `${path}-${storageMTime}`;
+    if (this.recentProcessedInternalFiles.contains(key)) {
+      return true;
+    }
+    this.recentProcessedInternalFiles = [key, ...this.recentProcessedInternalFiles].slice(0, 100);
+    this.storeCustomizationFiles(path).then(() => {
+    });
+  }
+  async scanAllConfigFiles(showMessage) {
+    const logLevel = showMessage ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO;
+    Logger("Scanning customizing files.", logLevel, "scan-all-config");
+    const term = this.plugin.deviceAndVaultName;
+    if (term == "") {
+      Logger("We have to configure the device name", LOG_LEVEL.NOTICE);
+      return;
+    }
+    const filesAll = await this.scanInternalFiles();
+    const files = filesAll.filter((e2) => this.isTargetPath(e2)).map((e2) => ({ key: this.filenameToUnifiedKey(e2), file: e2 }));
+    const virtualPathsOfLocalFiles = [...new Set(files.map((e2) => e2.key))];
+    const filesOnDB = (await this.localDatabase.allDocsRaw({ startkey: ICXHeader + "", endkey: `${ICXHeader}\u{10FFFF}`, include_docs: true })).rows.map((e2) => e2.doc).filter((e2) => !e2.deleted);
+    let deleteCandidate = filesOnDB.map((e2) => this.getPath(e2)).filter((e2) => e2.startsWith(`${ICXHeader}${term}/`));
+    for (const vp of virtualPathsOfLocalFiles) {
+      const p = files.find((e2) => e2.key == vp).file;
+      await this.storeCustomizationFiles(p);
+      deleteCandidate = deleteCandidate.filter((e2) => e2 != vp);
+    }
+    for (const vp of deleteCandidate) {
+      await this.deleteConfigOnDatabase(vp);
+    }
+    this.updatePluginList(false).then();
+  }
+  async deleteConfigOnDatabase(prefixedFileName, forceWrite = false) {
+    const mtime = new Date().getTime();
+    await runWithLock("file-x-" + prefixedFileName, false, async () => {
+      try {
+        const old = await this.localDatabase.getDBEntryMeta(prefixedFileName, null, false);
+        let saveData;
+        if (old === false) {
+          Logger(`STORAGE -x> DB:${prefixedFileName}: (config) already deleted (Not found on database)`);
+        } else {
+          if (old.deleted) {
+            Logger(`STORAGE -x> DB:${prefixedFileName}: (config) already deleted`);
+            return;
+          }
+          saveData = {
+            ...old,
+            mtime,
+            size: 0,
+            children: [],
+            deleted: true,
+            type: "newnote"
+          };
+        }
+        await this.localDatabase.putRaw(saveData);
+        await this.updatePluginList(false, prefixedFileName);
+        Logger(`STORAGE -x> DB:${prefixedFileName}: (config) Done`);
+      } catch (ex) {
+        Logger(`STORAGE -x> DB:${prefixedFileName}: (config) Failed`);
+        Logger(ex, LOG_LEVEL.VERBOSE);
+        return false;
       }
     });
+  }
+  async scanInternalFiles() {
+    const filenames = (await this.getFiles(this.app.vault.configDir, 2)).filter((e2) => e2.startsWith(".")).filter((e2) => !e2.startsWith(".trash"));
+    return filenames;
+  }
+  async getFiles(path, lastDepth) {
+    if (lastDepth == -1)
+      return [];
+    const w = await this.app.vault.adapter.list(path);
+    let files = [
+      ...w.files
+    ];
+    for (const v of w.folders) {
+      files = files.concat(await this.getFiles(v, lastDepth - 1));
+    }
+    return files;
   }
 };
 
-// src/PluginPane.svelte
-function add_css(target) {
-  append_styles(target, "svelte-1907s6a", ".ols-plugins-div-buttons.svelte-1907s6a{display:flex;flex-direction:row;justify-content:flex-end;margin-top:8px}.wrapToggle.svelte-1907s6a{display:flex;justify-content:center;align-content:center}");
+// src/PluginCombo.svelte
+function add_css2(target) {
+  append_styles(target, "svelte-tsbdtg", ".spacer.svelte-tsbdtg{min-width:1px;flex-grow:1}button.svelte-tsbdtg{margin:2px 4px;min-width:3em;max-width:4em}button.svelte-tsbdtg:disabled{border:none;box-shadow:none;background-color:transparent;visibility:collapse}button.svelte-tsbdtg:disabled:hover{border:none;box-shadow:none;background-color:transparent;visibility:collapse}span.message.svelte-tsbdtg{color:var(--text-muted);font-size:var(--font-ui-smaller);padding:0 1em;line-height:var(--line-height-tight)}span.messages.svelte-tsbdtg{display:flex;flex-direction:column;align-items:center}.is-mobile .spacer.svelte-tsbdtg{margin-left:auto}");
 }
-function get_each_context(ctx, list, i) {
+function get_each_context2(ctx, list, i) {
   const child_ctx = ctx.slice();
-  child_ctx[26] = list[i][0];
-  child_ctx[27] = list[i][1];
+  child_ctx[30] = list[i];
   return child_ctx;
 }
-function get_each_context_1(ctx, list, i) {
-  const child_ctx = ctx.slice();
-  child_ctx[0] = list[i];
-  return child_ctx;
-}
-function create_else_block(ctx) {
-  let each_1_anchor;
-  let each_value = ctx[2];
-  let each_blocks = [];
-  for (let i = 0; i < each_value.length; i += 1) {
-    each_blocks[i] = create_each_block(get_each_context(ctx, each_value, i));
-  }
+function create_else_block_3(ctx) {
+  let span0;
+  let t0;
+  let span1;
+  let t2;
+  let button0;
+  let t3;
+  let button1;
   return {
     c() {
+      span0 = element("span");
+      t0 = space();
+      span1 = element("span");
+      span1.textContent = "All devices are even";
+      t2 = space();
+      button0 = element("button");
+      t3 = space();
+      button1 = element("button");
+      attr(span0, "class", "spacer svelte-tsbdtg");
+      attr(span1, "class", "message even svelte-tsbdtg");
+      button0.disabled = true;
+      attr(button0, "class", "svelte-tsbdtg");
+      button1.disabled = true;
+      attr(button1, "class", "svelte-tsbdtg");
+    },
+    m(target, anchor) {
+      insert(target, span0, anchor);
+      insert(target, t0, anchor);
+      insert(target, span1, anchor);
+      insert(target, t2, anchor);
+      insert(target, button0, anchor);
+      insert(target, t3, anchor);
+      insert(target, button1, anchor);
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching)
+        detach(span0);
+      if (detaching)
+        detach(t0);
+      if (detaching)
+        detach(span1);
+      if (detaching)
+        detach(t2);
+      if (detaching)
+        detach(button0);
+      if (detaching)
+        detach(t3);
+      if (detaching)
+        detach(button1);
+    }
+  };
+}
+function create_if_block2(ctx) {
+  let span;
+  let t2;
+  let if_block_anchor;
+  let if_block = !ctx[0] && create_if_block_12(ctx);
+  return {
+    c() {
+      span = element("span");
+      t2 = space();
+      if (if_block)
+        if_block.c();
+      if_block_anchor = empty();
+      attr(span, "class", "spacer svelte-tsbdtg");
+    },
+    m(target, anchor) {
+      insert(target, span, anchor);
+      insert(target, t2, anchor);
+      if (if_block)
+        if_block.m(target, anchor);
+      insert(target, if_block_anchor, anchor);
+    },
+    p(ctx2, dirty) {
+      if (!ctx2[0]) {
+        if (if_block) {
+          if_block.p(ctx2, dirty);
+        } else {
+          if_block = create_if_block_12(ctx2);
+          if_block.c();
+          if_block.m(if_block_anchor.parentNode, if_block_anchor);
+        }
+      } else if (if_block) {
+        if_block.d(1);
+        if_block = null;
+      }
+    },
+    d(detaching) {
+      if (detaching)
+        detach(span);
+      if (detaching)
+        detach(t2);
+      if (if_block)
+        if_block.d(detaching);
+      if (detaching)
+        detach(if_block_anchor);
+    }
+  };
+}
+function create_if_block_12(ctx) {
+  let span3;
+  let span0;
+  let t0;
+  let t1;
+  let span1;
+  let t2;
+  let t3;
+  let span2;
+  let t4;
+  let t5;
+  let select;
+  let option;
+  let option_value_value;
+  let t7;
+  let t8;
+  let if_block1_anchor;
+  let mounted;
+  let dispose;
+  let each_value = ctx[8];
+  let each_blocks = [];
+  for (let i = 0; i < each_value.length; i += 1) {
+    each_blocks[i] = create_each_block2(get_each_context2(ctx, each_value, i));
+  }
+  function select_block_type_1(ctx2, dirty) {
+    if (ctx2[6] || ctx2[1] && ctx2[2] != "")
+      return create_if_block_42;
+    return create_else_block_2;
+  }
+  let current_block_type = select_block_type_1(ctx, [-1, -1]);
+  let if_block0 = current_block_type(ctx);
+  let if_block1 = ctx[1] && create_if_block_22(ctx);
+  return {
+    c() {
+      span3 = element("span");
+      span0 = element("span");
+      t0 = text(ctx[3]);
+      t1 = space();
+      span1 = element("span");
+      t2 = text(ctx[4]);
+      t3 = space();
+      span2 = element("span");
+      t4 = text(ctx[5]);
+      t5 = space();
+      select = element("select");
+      option = element("option");
+      option.textContent = "-";
       for (let i = 0; i < each_blocks.length; i += 1) {
         each_blocks[i].c();
       }
-      each_1_anchor = empty();
+      t7 = space();
+      if_block0.c();
+      t8 = space();
+      if (if_block1)
+        if_block1.c();
+      if_block1_anchor = empty();
+      attr(span0, "class", "message svelte-tsbdtg");
+      attr(span1, "class", "message svelte-tsbdtg");
+      attr(span2, "class", "message svelte-tsbdtg");
+      attr(span3, "class", "messages svelte-tsbdtg");
+      option.__value = option_value_value = "";
+      option.value = option.__value;
+      if (ctx[2] === void 0)
+        add_render_callback(() => ctx[24].call(select));
     },
     m(target, anchor) {
+      insert(target, span3, anchor);
+      append(span3, span0);
+      append(span0, t0);
+      append(span3, t1);
+      append(span3, span1);
+      append(span1, t2);
+      append(span3, t3);
+      append(span3, span2);
+      append(span2, t4);
+      insert(target, t5, anchor);
+      insert(target, select, anchor);
+      append(select, option);
       for (let i = 0; i < each_blocks.length; i += 1) {
-        each_blocks[i].m(target, anchor);
+        if (each_blocks[i]) {
+          each_blocks[i].m(select, null);
+        }
       }
-      insert(target, each_1_anchor, anchor);
+      select_option(select, ctx[2], true);
+      insert(target, t7, anchor);
+      if_block0.m(target, anchor);
+      insert(target, t8, anchor);
+      if (if_block1)
+        if_block1.m(target, anchor);
+      insert(target, if_block1_anchor, anchor);
+      if (!mounted) {
+        dispose = listen(select, "change", ctx[24]);
+        mounted = true;
+      }
     },
     p(ctx2, dirty) {
-      if (dirty[0] & 204) {
-        each_value = ctx2[2];
+      if (dirty[0] & 8)
+        set_data(t0, ctx2[3]);
+      if (dirty[0] & 16)
+        set_data(t2, ctx2[4]);
+      if (dirty[0] & 32)
+        set_data(t4, ctx2[5]);
+      if (dirty[0] & 256) {
+        each_value = ctx2[8];
         let i;
         for (i = 0; i < each_value.length; i += 1) {
-          const child_ctx = get_each_context(ctx2, each_value, i);
+          const child_ctx = get_each_context2(ctx2, each_value, i);
           if (each_blocks[i]) {
             each_blocks[i].p(child_ctx, dirty);
           } else {
-            each_blocks[i] = create_each_block(child_ctx);
+            each_blocks[i] = create_each_block2(child_ctx);
             each_blocks[i].c();
-            each_blocks[i].m(each_1_anchor.parentNode, each_1_anchor);
+            each_blocks[i].m(select, null);
           }
         }
         for (; i < each_blocks.length; i += 1) {
@@ -16029,262 +17729,9 @@ function create_else_block(ctx) {
         }
         each_blocks.length = each_value.length;
       }
-    },
-    d(detaching) {
-      destroy_each(each_blocks, detaching);
-      if (detaching)
-        detach(each_1_anchor);
-    }
-  };
-}
-function create_if_block_1(ctx) {
-  let tr;
-  return {
-    c() {
-      tr = element("tr");
-      tr.innerHTML = `<td colspan="3" class="sls-table-tail tcenter">No plugins found.</td>`;
-    },
-    m(target, anchor) {
-      insert(target, tr, anchor);
-    },
-    p: noop,
-    d(detaching) {
-      if (detaching)
-        detach(tr);
-    }
-  };
-}
-function create_if_block(ctx) {
-  let tr;
-  return {
-    c() {
-      tr = element("tr");
-      tr.innerHTML = `<td colspan="3" class="sls-table-tail tcenter">Retrieving...</td>`;
-    },
-    m(target, anchor) {
-      insert(target, tr, anchor);
-    },
-    p: noop,
-    d(detaching) {
-      if (detaching)
-        detach(tr);
-    }
-  };
-}
-function create_else_block_2(ctx) {
-  let div1;
-  let div0;
-  let mounted;
-  let dispose;
-  function click_handler_1() {
-    return ctx[20](ctx[0]);
-  }
-  return {
-    c() {
-      div1 = element("div");
-      div0 = element("div");
-      attr(div0, "class", "checkbox-container");
-      toggle_class(div0, "is-enabled", ctx[3][ctx[0].deviceVaultName + "---" + ctx[0].manifest.id + "---plugin"]);
-      attr(div1, "class", "wrapToggle svelte-1907s6a");
-    },
-    m(target, anchor) {
-      insert(target, div1, anchor);
-      append(div1, div0);
-      if (!mounted) {
-        dispose = listen(div0, "click", click_handler_1);
-        mounted = true;
+      if (dirty[0] & 260) {
+        select_option(select, ctx2[2]);
       }
-    },
-    p(new_ctx, dirty) {
-      ctx = new_ctx;
-      if (dirty[0] & 12) {
-        toggle_class(div0, "is-enabled", ctx[3][ctx[0].deviceVaultName + "---" + ctx[0].manifest.id + "---plugin"]);
-      }
-    },
-    d(detaching) {
-      if (detaching)
-        detach(div1);
-      mounted = false;
-      dispose();
-    }
-  };
-}
-function create_if_block_3(ctx) {
-  let t2;
-  return {
-    c() {
-      t2 = text("-");
-    },
-    m(target, anchor) {
-      insert(target, t2, anchor);
-    },
-    p: noop,
-    d(detaching) {
-      if (detaching)
-        detach(t2);
-    }
-  };
-}
-function create_else_block_1(ctx) {
-  let div1;
-  let div0;
-  let mounted;
-  let dispose;
-  function click_handler_2() {
-    return ctx[21](ctx[0]);
-  }
-  return {
-    c() {
-      div1 = element("div");
-      div0 = element("div");
-      attr(div0, "class", "checkbox-container");
-      toggle_class(div0, "is-enabled", ctx[3][ctx[0].deviceVaultName + "---" + ctx[0].manifest.id + "---setting"]);
-      attr(div1, "class", "wrapToggle svelte-1907s6a");
-    },
-    m(target, anchor) {
-      insert(target, div1, anchor);
-      append(div1, div0);
-      if (!mounted) {
-        dispose = listen(div0, "click", click_handler_2);
-        mounted = true;
-      }
-    },
-    p(new_ctx, dirty) {
-      ctx = new_ctx;
-      if (dirty[0] & 12) {
-        toggle_class(div0, "is-enabled", ctx[3][ctx[0].deviceVaultName + "---" + ctx[0].manifest.id + "---setting"]);
-      }
-    },
-    d(detaching) {
-      if (detaching)
-        detach(div1);
-      mounted = false;
-      dispose();
-    }
-  };
-}
-function create_if_block_2(ctx) {
-  let t2;
-  return {
-    c() {
-      t2 = text("-");
-    },
-    m(target, anchor) {
-      insert(target, t2, anchor);
-    },
-    p: noop,
-    d(detaching) {
-      if (detaching)
-        detach(t2);
-    }
-  };
-}
-function create_each_block_1(ctx) {
-  let tr0;
-  let td0;
-  let t0_value = ctx[0].manifest.name + "";
-  let t0;
-  let t1;
-  let td1;
-  let t2_value = ctx[0].versionInfo + "";
-  let t2;
-  let t3_value = getDispString(ctx[0].versionFlag) + "";
-  let t3;
-  let t4;
-  let td2;
-  let t5;
-  let tr1;
-  let td3;
-  let t7;
-  let td4;
-  let t8_value = ctx[0].mtimeInfo + "";
-  let t8;
-  let t9_value = getDispString(ctx[0].mtimeFlag) + "";
-  let t9;
-  let t10;
-  let td5;
-  let t11;
-  let tr2;
-  function select_block_type_1(ctx2, dirty) {
-    if (ctx2[0].versionFlag === "EVEN" || ctx2[0].versionFlag === "")
-      return create_if_block_3;
-    return create_else_block_2;
-  }
-  let current_block_type = select_block_type_1(ctx, [-1, -1]);
-  let if_block0 = current_block_type(ctx);
-  function select_block_type_2(ctx2, dirty) {
-    if (ctx2[0].mtimeFlag === "EVEN" || ctx2[0].mtimeFlag === "")
-      return create_if_block_2;
-    return create_else_block_1;
-  }
-  let current_block_type_1 = select_block_type_2(ctx, [-1, -1]);
-  let if_block1 = current_block_type_1(ctx);
-  return {
-    c() {
-      tr0 = element("tr");
-      td0 = element("td");
-      t0 = text(t0_value);
-      t1 = space();
-      td1 = element("td");
-      t2 = text(t2_value);
-      t3 = text(t3_value);
-      t4 = space();
-      td2 = element("td");
-      if_block0.c();
-      t5 = space();
-      tr1 = element("tr");
-      td3 = element("td");
-      td3.textContent = "Settings";
-      t7 = space();
-      td4 = element("td");
-      t8 = text(t8_value);
-      t9 = text(t9_value);
-      t10 = space();
-      td5 = element("td");
-      if_block1.c();
-      t11 = space();
-      tr2 = element("tr");
-      tr2.innerHTML = `<th colspan="3"></th> 
-                        `;
-      attr(td0, "class", "sls-table-head");
-      attr(td1, "class", "sls-table-tail tcenter");
-      attr(td2, "class", "sls-table-tail tcenter");
-      attr(td3, "class", "sls-table-head");
-      attr(td4, "class", "sls-table-tail tcenter");
-      attr(td5, "class", "sls-table-tail tcenter");
-      attr(tr2, "class", "divider");
-    },
-    m(target, anchor) {
-      insert(target, tr0, anchor);
-      append(tr0, td0);
-      append(td0, t0);
-      append(tr0, t1);
-      append(tr0, td1);
-      append(td1, t2);
-      append(td1, t3);
-      append(tr0, t4);
-      append(tr0, td2);
-      if_block0.m(td2, null);
-      insert(target, t5, anchor);
-      insert(target, tr1, anchor);
-      append(tr1, td3);
-      append(tr1, t7);
-      append(tr1, td4);
-      append(td4, t8);
-      append(td4, t9);
-      append(tr1, t10);
-      append(tr1, td5);
-      if_block1.m(td5, null);
-      insert(target, t11, anchor);
-      insert(target, tr2, anchor);
-    },
-    p(ctx2, dirty) {
-      if (dirty[0] & 4 && t0_value !== (t0_value = ctx2[0].manifest.name + ""))
-        set_data(t0, t0_value);
-      if (dirty[0] & 4 && t2_value !== (t2_value = ctx2[0].versionInfo + ""))
-        set_data(t2, t2_value);
-      if (dirty[0] & 4 && t3_value !== (t3_value = getDispString(ctx2[0].versionFlag) + ""))
-        set_data(t3, t3_value);
       if (current_block_type === (current_block_type = select_block_type_1(ctx2, dirty)) && if_block0) {
         if_block0.p(ctx2, dirty);
       } else {
@@ -16292,257 +17739,308 @@ function create_each_block_1(ctx) {
         if_block0 = current_block_type(ctx2);
         if (if_block0) {
           if_block0.c();
-          if_block0.m(td2, null);
+          if_block0.m(t8.parentNode, t8);
         }
       }
-      if (dirty[0] & 4 && t8_value !== (t8_value = ctx2[0].mtimeInfo + ""))
-        set_data(t8, t8_value);
-      if (dirty[0] & 4 && t9_value !== (t9_value = getDispString(ctx2[0].mtimeFlag) + ""))
-        set_data(t9, t9_value);
-      if (current_block_type_1 === (current_block_type_1 = select_block_type_2(ctx2, dirty)) && if_block1) {
-        if_block1.p(ctx2, dirty);
-      } else {
-        if_block1.d(1);
-        if_block1 = current_block_type_1(ctx2);
+      if (ctx2[1]) {
         if (if_block1) {
+          if_block1.p(ctx2, dirty);
+        } else {
+          if_block1 = create_if_block_22(ctx2);
           if_block1.c();
-          if_block1.m(td5, null);
+          if_block1.m(if_block1_anchor.parentNode, if_block1_anchor);
         }
+      } else if (if_block1) {
+        if_block1.d(1);
+        if_block1 = null;
       }
     },
     d(detaching) {
       if (detaching)
-        detach(tr0);
-      if_block0.d();
+        detach(span3);
       if (detaching)
         detach(t5);
       if (detaching)
-        detach(tr1);
-      if_block1.d();
-      if (detaching)
-        detach(t11);
-      if (detaching)
-        detach(tr2);
-    }
-  };
-}
-function create_each_block(ctx) {
-  let tr;
-  let th0;
-  let t0_value = ctx[26] + "";
-  let t0;
-  let t1;
-  let th1;
-  let button;
-  let t3;
-  let each_1_anchor;
-  let mounted;
-  let dispose;
-  function click_handler() {
-    return ctx[19](ctx[26]);
-  }
-  let each_value_1 = ctx[27];
-  let each_blocks = [];
-  for (let i = 0; i < each_value_1.length; i += 1) {
-    each_blocks[i] = create_each_block_1(get_each_context_1(ctx, each_value_1, i));
-  }
-  return {
-    c() {
-      tr = element("tr");
-      th0 = element("th");
-      t0 = text(t0_value);
-      t1 = space();
-      th1 = element("th");
-      button = element("button");
-      button.textContent = "\u2714";
-      t3 = space();
-      for (let i = 0; i < each_blocks.length; i += 1) {
-        each_blocks[i].c();
-      }
-      each_1_anchor = empty();
-      attr(th0, "colspan", "2");
-      attr(th0, "class", "sls-plugins-tbl-device-head");
-      attr(button, "class", "mod-cta");
-      attr(th1, "class", "sls-plugins-tbl-device-head");
-    },
-    m(target, anchor) {
-      insert(target, tr, anchor);
-      append(tr, th0);
-      append(th0, t0);
-      append(tr, t1);
-      append(tr, th1);
-      append(th1, button);
-      insert(target, t3, anchor);
-      for (let i = 0; i < each_blocks.length; i += 1) {
-        each_blocks[i].m(target, anchor);
-      }
-      insert(target, each_1_anchor, anchor);
-      if (!mounted) {
-        dispose = listen(button, "click", click_handler);
-        mounted = true;
-      }
-    },
-    p(new_ctx, dirty) {
-      ctx = new_ctx;
-      if (dirty[0] & 4 && t0_value !== (t0_value = ctx[26] + ""))
-        set_data(t0, t0_value);
-      if (dirty[0] & 76) {
-        each_value_1 = ctx[27];
-        let i;
-        for (i = 0; i < each_value_1.length; i += 1) {
-          const child_ctx = get_each_context_1(ctx, each_value_1, i);
-          if (each_blocks[i]) {
-            each_blocks[i].p(child_ctx, dirty);
-          } else {
-            each_blocks[i] = create_each_block_1(child_ctx);
-            each_blocks[i].c();
-            each_blocks[i].m(each_1_anchor.parentNode, each_1_anchor);
-          }
-        }
-        for (; i < each_blocks.length; i += 1) {
-          each_blocks[i].d(1);
-        }
-        each_blocks.length = each_value_1.length;
-      }
-    },
-    d(detaching) {
-      if (detaching)
-        detach(tr);
-      if (detaching)
-        detach(t3);
+        detach(select);
       destroy_each(each_blocks, detaching);
       if (detaching)
-        detach(each_1_anchor);
+        detach(t7);
+      if_block0.d(detaching);
+      if (detaching)
+        detach(t8);
+      if (if_block1)
+        if_block1.d(detaching);
+      if (detaching)
+        detach(if_block1_anchor);
       mounted = false;
       dispose();
     }
   };
 }
-function create_fragment(ctx) {
-  let div5;
-  let h1;
-  let t1;
-  let div1;
+function create_each_block2(ctx) {
+  let option;
+  let t_value = ctx[30] + "";
   let t2;
-  let div0;
-  let t3;
-  let div2;
-  let table;
-  let tr;
-  let t9;
-  let t10;
-  let div3;
+  let option_value_value;
+  return {
+    c() {
+      option = element("option");
+      t2 = text(t_value);
+      option.__value = option_value_value = ctx[30];
+      option.value = option.__value;
+    },
+    m(target, anchor) {
+      insert(target, option, anchor);
+      append(option, t2);
+    },
+    p(ctx2, dirty) {
+      if (dirty[0] & 256 && t_value !== (t_value = ctx2[30] + ""))
+        set_data(t2, t_value);
+      if (dirty[0] & 256 && option_value_value !== (option_value_value = ctx2[30])) {
+        option.__value = option_value_value;
+        option.value = option.__value;
+      }
+    },
+    d(detaching) {
+      if (detaching)
+        detach(option);
+    }
+  };
+}
+function create_else_block_2(ctx) {
   let button0;
-  let t12;
+  let t2;
   let button1;
-  let t14;
-  let div4;
-  let button2;
-  let t16;
-  let button3;
-  let t18;
-  let button4;
+  return {
+    c() {
+      button0 = element("button");
+      t2 = space();
+      button1 = element("button");
+      button0.disabled = true;
+      attr(button0, "class", "svelte-tsbdtg");
+      button1.disabled = true;
+      attr(button1, "class", "svelte-tsbdtg");
+    },
+    m(target, anchor) {
+      insert(target, button0, anchor);
+      insert(target, t2, anchor);
+      insert(target, button1, anchor);
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching)
+        detach(button0);
+      if (detaching)
+        detach(t2);
+      if (detaching)
+        detach(button1);
+    }
+  };
+}
+function create_if_block_42(ctx) {
+  let t0;
+  let button;
   let mounted;
   let dispose;
+  function select_block_type_2(ctx2, dirty) {
+    if (ctx2[7])
+      return create_if_block_5;
+    return create_else_block_12;
+  }
+  let current_block_type = select_block_type_2(ctx, [-1, -1]);
+  let if_block = current_block_type(ctx);
+  return {
+    c() {
+      if_block.c();
+      t0 = space();
+      button = element("button");
+      button.textContent = "\u2713";
+      attr(button, "class", "svelte-tsbdtg");
+    },
+    m(target, anchor) {
+      if_block.m(target, anchor);
+      insert(target, t0, anchor);
+      insert(target, button, anchor);
+      if (!mounted) {
+        dispose = listen(button, "click", ctx[9]);
+        mounted = true;
+      }
+    },
+    p(ctx2, dirty) {
+      if (current_block_type === (current_block_type = select_block_type_2(ctx2, dirty)) && if_block) {
+        if_block.p(ctx2, dirty);
+      } else {
+        if_block.d(1);
+        if_block = current_block_type(ctx2);
+        if (if_block) {
+          if_block.c();
+          if_block.m(t0.parentNode, t0);
+        }
+      }
+    },
+    d(detaching) {
+      if_block.d(detaching);
+      if (detaching)
+        detach(t0);
+      if (detaching)
+        detach(button);
+      mounted = false;
+      dispose();
+    }
+  };
+}
+function create_else_block_12(ctx) {
+  let button;
+  return {
+    c() {
+      button = element("button");
+      button.disabled = true;
+      attr(button, "class", "svelte-tsbdtg");
+    },
+    m(target, anchor) {
+      insert(target, button, anchor);
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching)
+        detach(button);
+    }
+  };
+}
+function create_if_block_5(ctx) {
+  let button;
+  let mounted;
+  let dispose;
+  return {
+    c() {
+      button = element("button");
+      button.textContent = "\u{1F50D}";
+      attr(button, "class", "svelte-tsbdtg");
+    },
+    m(target, anchor) {
+      insert(target, button, anchor);
+      if (!mounted) {
+        dispose = listen(button, "click", ctx[10]);
+        mounted = true;
+      }
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching)
+        detach(button);
+      mounted = false;
+      dispose();
+    }
+  };
+}
+function create_if_block_22(ctx) {
+  let if_block_anchor;
+  function select_block_type_3(ctx2, dirty) {
+    if (ctx2[2] != "")
+      return create_if_block_32;
+    return create_else_block2;
+  }
+  let current_block_type = select_block_type_3(ctx, [-1, -1]);
+  let if_block = current_block_type(ctx);
+  return {
+    c() {
+      if_block.c();
+      if_block_anchor = empty();
+    },
+    m(target, anchor) {
+      if_block.m(target, anchor);
+      insert(target, if_block_anchor, anchor);
+    },
+    p(ctx2, dirty) {
+      if (current_block_type === (current_block_type = select_block_type_3(ctx2, dirty)) && if_block) {
+        if_block.p(ctx2, dirty);
+      } else {
+        if_block.d(1);
+        if_block = current_block_type(ctx2);
+        if (if_block) {
+          if_block.c();
+          if_block.m(if_block_anchor.parentNode, if_block_anchor);
+        }
+      }
+    },
+    d(detaching) {
+      if_block.d(detaching);
+      if (detaching)
+        detach(if_block_anchor);
+    }
+  };
+}
+function create_else_block2(ctx) {
+  let button;
+  let mounted;
+  let dispose;
+  return {
+    c() {
+      button = element("button");
+      button.textContent = "\u{1F4D1}";
+      attr(button, "class", "svelte-tsbdtg");
+    },
+    m(target, anchor) {
+      insert(target, button, anchor);
+      if (!mounted) {
+        dispose = listen(button, "click", ctx[12]);
+        mounted = true;
+      }
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching)
+        detach(button);
+      mounted = false;
+      dispose();
+    }
+  };
+}
+function create_if_block_32(ctx) {
+  let button;
+  let mounted;
+  let dispose;
+  return {
+    c() {
+      button = element("button");
+      button.textContent = "\u{1F5D1}\uFE0F";
+      attr(button, "class", "svelte-tsbdtg");
+    },
+    m(target, anchor) {
+      insert(target, button, anchor);
+      if (!mounted) {
+        dispose = listen(button, "click", ctx[11]);
+        mounted = true;
+      }
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching)
+        detach(button);
+      mounted = false;
+      dispose();
+    }
+  };
+}
+function create_fragment2(ctx) {
+  let if_block_anchor;
   function select_block_type(ctx2, dirty) {
-    if (!ctx2[2])
-      return create_if_block;
-    if (ctx2[2].length == 0)
-      return create_if_block_1;
-    return create_else_block;
+    if (ctx2[8].length > 0)
+      return create_if_block2;
+    return create_else_block_3;
   }
   let current_block_type = select_block_type(ctx, [-1, -1]);
   let if_block = current_block_type(ctx);
   return {
     c() {
-      div5 = element("div");
-      h1 = element("h1");
-      h1.textContent = "Plugins and their settings";
-      t1 = space();
-      div1 = element("div");
-      t2 = text("Show own items\n        ");
-      div0 = element("div");
-      t3 = space();
-      div2 = element("div");
-      table = element("table");
-      tr = element("tr");
-      tr.innerHTML = `<th class="sls-plugins-tbl-device-head">Name</th> 
-                <th class="sls-plugins-tbl-device-head">Info</th> 
-                <th class="sls-plugins-tbl-device-head">Target</th>`;
-      t9 = space();
       if_block.c();
-      t10 = space();
-      div3 = element("div");
-      button0 = element("button");
-      button0.textContent = "Replicate and refresh";
-      t12 = space();
-      button1 = element("button");
-      button1.textContent = "Clear Selection";
-      t14 = space();
-      div4 = element("div");
-      button2 = element("button");
-      button2.textContent = "Check Updates";
-      t16 = space();
-      button3 = element("button");
-      button3.textContent = "Scan installed";
-      t18 = space();
-      button4 = element("button");
-      button4.textContent = "Apply all";
-      attr(div0, "class", "checkbox-container");
-      toggle_class(div0, "is-enabled", ctx[1]);
-      attr(div1, "class", "ols-plugins-div-buttons svelte-1907s6a");
-      set_style(tr, "position", "sticky");
-      attr(table, "class", "sls-plugins-tbl");
-      attr(div2, "class", "sls-plugins-wrap");
-      attr(button0, "class", "");
-      attr(button1, "class", "");
-      attr(div3, "class", "ols-plugins-div-buttons svelte-1907s6a");
-      attr(button2, "class", "mod-cta");
-      attr(button3, "class", "mod-cta");
-      attr(button4, "class", "mod-cta");
-      attr(div4, "class", "ols-plugins-div-buttons svelte-1907s6a");
+      if_block_anchor = empty();
     },
     m(target, anchor) {
-      insert(target, div5, anchor);
-      append(div5, h1);
-      append(div5, t1);
-      append(div5, div1);
-      append(div1, t2);
-      append(div1, div0);
-      append(div5, t3);
-      append(div5, div2);
-      append(div2, table);
-      append(table, tr);
-      append(table, t9);
-      if_block.m(table, null);
-      append(div5, t10);
-      append(div5, div3);
-      append(div3, button0);
-      append(div3, t12);
-      append(div3, button1);
-      append(div5, t14);
-      append(div5, div4);
-      append(div4, button2);
-      append(div4, t16);
-      append(div4, button3);
-      append(div4, t18);
-      append(div4, button4);
-      if (!mounted) {
-        dispose = [
-          listen(div0, "click", ctx[5]),
-          listen(button0, "click", ctx[11]),
-          listen(button1, "click", ctx[4]),
-          listen(button2, "click", ctx[10]),
-          listen(button3, "click", ctx[8]),
-          listen(button4, "click", ctx[9])
-        ];
-        mounted = true;
-      }
+      if_block.m(target, anchor);
+      insert(target, if_block_anchor, anchor);
     },
     p(ctx2, dirty) {
-      if (dirty[0] & 2) {
-        toggle_class(div0, "is-enabled", ctx2[1]);
-      }
       if (current_block_type === (current_block_type = select_block_type(ctx2, dirty)) && if_block) {
         if_block.p(ctx2, dirty);
       } else {
@@ -16550,243 +18048,1243 @@ function create_fragment(ctx) {
         if_block = current_block_type(ctx2);
         if (if_block) {
           if_block.c();
-          if_block.m(table, null);
+          if_block.m(if_block_anchor.parentNode, if_block_anchor);
         }
       }
     },
     i: noop,
     o: noop,
     d(detaching) {
+      if_block.d(detaching);
+      if (detaching)
+        detach(if_block_anchor);
+    }
+  };
+}
+function instance2($$self, $$props, $$invalidate) {
+  let { list = [] } = $$props;
+  let { thisTerm = "" } = $$props;
+  let { hideNotApplicable = false } = $$props;
+  let { selectNewest = 0 } = $$props;
+  let { applyAllPluse = 0 } = $$props;
+  let { applyData } = $$props;
+  let { compareData } = $$props;
+  let { deleteData } = $$props;
+  let { hidden } = $$props;
+  let { plugin: plugin2 } = $$props;
+  let { isMaintenanceMode = false } = $$props;
+  const addOn = plugin2.addOnConfigSync;
+  let selected = "";
+  let freshness = "";
+  let equivalency = "";
+  let version2 = "";
+  let canApply = false;
+  let canCompare = false;
+  let currentSelectNewest = 0;
+  let currentApplyAll = 0;
+  let terms = [];
+  async function comparePlugin(local, remote) {
+    var _a, _b;
+    let freshness2 = "";
+    let equivalency2 = "";
+    let version3 = "";
+    let contentCheck = false;
+    let canApply2 = false;
+    let canCompare2 = false;
+    if (!local && !remote) {
+      freshness2 = "";
+    } else if (local && !remote) {
+      freshness2 = "\u26A0 Local only";
+    } else if (remote && !local) {
+      freshness2 = "\u2713 Remote only";
+      canApply2 = true;
+    } else {
+      const dtDiff = ((_a = local === null || local === void 0 ? void 0 : local.mtime) !== null && _a !== void 0 ? _a : 0) - ((_b = remote === null || remote === void 0 ? void 0 : remote.mtime) !== null && _b !== void 0 ? _b : 0);
+      if (dtDiff / 1e3 < -10) {
+        freshness2 = "\u2713 Newer";
+        canApply2 = true;
+        contentCheck = true;
+      } else if (dtDiff / 1e3 > 10) {
+        freshness2 = "\u26A0 Older";
+        canApply2 = true;
+        contentCheck = true;
+      } else {
+        freshness2 = "\u2696\uFE0F Same old";
+        canApply2 = false;
+        contentCheck = true;
+      }
+    }
+    const localVersionStr = (local === null || local === void 0 ? void 0 : local.version) || "0.0.0";
+    const remoteVersionStr = (remote === null || remote === void 0 ? void 0 : remote.version) || "0.0.0";
+    if ((local === null || local === void 0 ? void 0 : local.version) || (remote === null || remote === void 0 ? void 0 : remote.version)) {
+      const localVersion = versionNumberString2Number(localVersionStr);
+      const remoteVersion = versionNumberString2Number(remoteVersionStr);
+      if (localVersion == remoteVersion) {
+        version3 = "\u2696\uFE0F Same ver.";
+      } else if (localVersion > remoteVersion) {
+        version3 = `\u26A0 Lower ${localVersionStr} > ${remoteVersionStr}`;
+      } else if (localVersion < remoteVersion) {
+        version3 = `\u2713 Higher ${localVersionStr} < ${remoteVersionStr}`;
+      }
+    }
+    if (contentCheck) {
+      const { canApply: canApply3, equivalency: equivalency3, canCompare: canCompare3 } = await checkEquivalency(local, remote);
+      return {
+        canApply: canApply3,
+        freshness: freshness2,
+        equivalency: equivalency3,
+        version: version3,
+        canCompare: canCompare3
+      };
+    }
+    return {
+      canApply: canApply2,
+      freshness: freshness2,
+      equivalency: equivalency2,
+      version: version3,
+      canCompare: canCompare2
+    };
+  }
+  async function checkEquivalency(local, remote) {
+    let equivalency2 = "";
+    let canApply2 = false;
+    let canCompare2 = false;
+    const filenames = [
+      .../* @__PURE__ */ new Set([
+        ...local.files.map((e2) => e2.filename),
+        ...remote.files.map((e2) => e2.filename)
+      ])
+    ];
+    const matchingStatus = filenames.map((filename) => {
+      const localFile = local.files.find((e2) => e2.filename == filename);
+      const remoteFile = remote.files.find((e2) => e2.filename == filename);
+      if (!localFile && !remoteFile) {
+        return 0;
+      } else if (localFile && !remoteFile) {
+        return 2;
+      } else if (!localFile && remoteFile) {
+        return 8;
+      } else {
+        if (getDocData(localFile.data) == getDocData(remoteFile.data)) {
+          return 4;
+        } else {
+          return 16;
+        }
+      }
+    }).reduce((p, c) => p | c, 0);
+    if (matchingStatus == 4) {
+      equivalency2 = "\u2696\uFE0F Same";
+      canApply2 = false;
+    } else if (matchingStatus <= 4) {
+      equivalency2 = "Same or local only";
+      canApply2 = false;
+    } else if (matchingStatus == 16) {
+      canApply2 = true;
+      canCompare2 = true;
+      equivalency2 = "\u2260 Different";
+    } else {
+      canApply2 = true;
+      canCompare2 = true;
+      equivalency2 = "\u2260 Different";
+    }
+    return { equivalency: equivalency2, canApply: canApply2, canCompare: canCompare2 };
+  }
+  async function performCompare(local, remote) {
+    var _a, _b, _c;
+    const result = await comparePlugin(local, remote);
+    $$invalidate(6, canApply = result.canApply);
+    $$invalidate(3, freshness = result.freshness);
+    $$invalidate(4, equivalency = result.equivalency);
+    $$invalidate(5, version2 = result.version);
+    $$invalidate(7, canCompare = result.canCompare);
+    if ((local === null || local === void 0 ? void 0 : local.files.length) != 1 || !((_c = (_b = (_a = local === null || local === void 0 ? void 0 : local.files) === null || _a === void 0 ? void 0 : _a.first()) === null || _b === void 0 ? void 0 : _b.filename) === null || _c === void 0 ? void 0 : _c.endsWith(".json"))) {
+      $$invalidate(7, canCompare = false);
+    }
+  }
+  async function updateTerms(list2, selectNewest2, isMaintenanceMode2) {
+    const local = list2.find((e2) => e2.term == thisTerm);
+    $$invalidate(2, selected = "");
+    if (isMaintenanceMode2) {
+      $$invalidate(8, terms = [...new Set(list2.map((e2) => e2.term))]);
+    } else if (hideNotApplicable) {
+      const termsTmp = [];
+      const wk = [...new Set(list2.map((e2) => e2.term))];
+      for (const termName of wk) {
+        const remote = list2.find((e2) => e2.term == termName);
+        if ((await comparePlugin(local, remote)).canApply) {
+          termsTmp.push(termName);
+        }
+      }
+      $$invalidate(8, terms = [...termsTmp]);
+    } else {
+      $$invalidate(8, terms = [...new Set(list2.map((e2) => e2.term))].filter((e2) => e2 != thisTerm));
+    }
+    let newest = local;
+    if (selectNewest2) {
+      for (const term of terms) {
+        const remote = list2.find((e2) => e2.term == term);
+        if (remote && remote.mtime && ((newest === null || newest === void 0 ? void 0 : newest.mtime) || 0) < remote.mtime) {
+          newest = remote;
+        }
+      }
+      if (newest && newest.term != thisTerm) {
+        $$invalidate(2, selected = newest.term);
+      }
+    }
+  }
+  async function applySelected() {
+    const local = list.find((e2) => e2.term == thisTerm);
+    const selectedItem = list.find((e2) => e2.term == selected);
+    if (selectedItem && await applyData(selectedItem)) {
+      scheduleTask("update-plugin-list", 250, () => addOn.updatePluginList(true, local.documentPath));
+    }
+  }
+  async function compareSelected() {
+    const local = list.find((e2) => e2.term == thisTerm);
+    const selectedItem = list.find((e2) => e2.term == selected);
+    if (local && selectedItem && await compareData(local, selectedItem)) {
+      scheduleTask("update-plugin-list", 250, () => addOn.updatePluginList(true, local.documentPath));
+    }
+  }
+  async function deleteSelected() {
+    const selectedItem = list.find((e2) => e2.term == selected);
+    if (selectedItem && await deleteData(selectedItem)) {
+      scheduleTask("update-plugin-list", 250, () => addOn.reloadPluginList(true));
+    }
+  }
+  async function duplicateItem() {
+    const local = list.find((e2) => e2.term == thisTerm);
+    const duplicateTermName = await askString(plugin2.app, "Duplicate", "device name", "");
+    if (duplicateTermName) {
+      if (duplicateTermName.contains("/")) {
+        Logger(`We can not use "/" to the device name`, LOG_LEVEL.NOTICE);
+        return;
+      }
+      const key = `${plugin2.app.vault.configDir}/${local.files[0].filename}`;
+      await addOn.storeCustomizationFiles(key, duplicateTermName);
+      await addOn.updatePluginList(false, addOn.filenameToUnifiedKey(key, duplicateTermName));
+    }
+  }
+  function select_change_handler() {
+    selected = select_value(this);
+    $$invalidate(2, selected);
+    $$invalidate(8, terms);
+  }
+  $$self.$$set = ($$props2) => {
+    if ("list" in $$props2)
+      $$invalidate(13, list = $$props2.list);
+    if ("thisTerm" in $$props2)
+      $$invalidate(14, thisTerm = $$props2.thisTerm);
+    if ("hideNotApplicable" in $$props2)
+      $$invalidate(15, hideNotApplicable = $$props2.hideNotApplicable);
+    if ("selectNewest" in $$props2)
+      $$invalidate(16, selectNewest = $$props2.selectNewest);
+    if ("applyAllPluse" in $$props2)
+      $$invalidate(17, applyAllPluse = $$props2.applyAllPluse);
+    if ("applyData" in $$props2)
+      $$invalidate(18, applyData = $$props2.applyData);
+    if ("compareData" in $$props2)
+      $$invalidate(19, compareData = $$props2.compareData);
+    if ("deleteData" in $$props2)
+      $$invalidate(20, deleteData = $$props2.deleteData);
+    if ("hidden" in $$props2)
+      $$invalidate(0, hidden = $$props2.hidden);
+    if ("plugin" in $$props2)
+      $$invalidate(21, plugin2 = $$props2.plugin);
+    if ("isMaintenanceMode" in $$props2)
+      $$invalidate(1, isMaintenanceMode = $$props2.isMaintenanceMode);
+  };
+  $$self.$$.update = () => {
+    if ($$self.$$.dirty[0] & 4268034) {
+      $: {
+        const doSelectNewest = selectNewest != currentSelectNewest;
+        $$invalidate(22, currentSelectNewest = selectNewest);
+        updateTerms(list, doSelectNewest, isMaintenanceMode);
+      }
+    }
+    if ($$self.$$.dirty[0] & 8519685) {
+      $: {
+        const doApply = applyAllPluse != currentApplyAll;
+        $$invalidate(23, currentApplyAll = applyAllPluse);
+        if (doApply && selected) {
+          if (!hidden) {
+            applySelected();
+          }
+        }
+      }
+    }
+    if ($$self.$$.dirty[0] & 24580) {
+      $: {
+        $$invalidate(3, freshness = "");
+        $$invalidate(4, equivalency = "");
+        $$invalidate(5, version2 = "");
+        $$invalidate(6, canApply = false);
+        if (selected == "") {
+        } else if (selected == thisTerm) {
+          $$invalidate(3, freshness = "This device");
+          $$invalidate(6, canApply = false);
+        } else {
+          const local = list.find((e2) => e2.term == thisTerm);
+          const remote = list.find((e2) => e2.term == selected);
+          performCompare(local, remote);
+        }
+      }
+    }
+  };
+  return [
+    hidden,
+    isMaintenanceMode,
+    selected,
+    freshness,
+    equivalency,
+    version2,
+    canApply,
+    canCompare,
+    terms,
+    applySelected,
+    compareSelected,
+    deleteSelected,
+    duplicateItem,
+    list,
+    thisTerm,
+    hideNotApplicable,
+    selectNewest,
+    applyAllPluse,
+    applyData,
+    compareData,
+    deleteData,
+    plugin2,
+    currentSelectNewest,
+    currentApplyAll,
+    select_change_handler
+  ];
+}
+var PluginCombo = class extends SvelteComponent {
+  constructor(options) {
+    super();
+    init2(
+      this,
+      options,
+      instance2,
+      create_fragment2,
+      safe_not_equal,
+      {
+        list: 13,
+        thisTerm: 14,
+        hideNotApplicable: 15,
+        selectNewest: 16,
+        applyAllPluse: 17,
+        applyData: 18,
+        compareData: 19,
+        deleteData: 20,
+        hidden: 0,
+        plugin: 21,
+        isMaintenanceMode: 1
+      },
+      add_css2,
+      [-1, -1]
+    );
+  }
+};
+var PluginCombo_default = PluginCombo;
+
+// src/PluginPane.svelte
+function add_css3(target) {
+  append_styles(target, "svelte-rs1qzz", ".labelrow.svelte-rs1qzz.svelte-rs1qzz{margin-left:0.4em;display:flex;justify-content:flex-start;align-items:center;border-top:1px solid var(--background-modifier-border);padding:4px;flex-wrap:wrap}.filerow.svelte-rs1qzz.svelte-rs1qzz{margin-left:1.25em;display:flex;justify-content:flex-start;align-items:center;padding-right:4px;flex-wrap:wrap}.filerow.hideeven.svelte-rs1qzz.svelte-rs1qzz:has(.even),.labelrow.hideeven.svelte-rs1qzz.svelte-rs1qzz:has(.even){display:none}.title.svelte-rs1qzz.svelte-rs1qzz{color:var(--text-normal);font-size:var(--font-ui-medium);line-height:var(--line-height-tight);margin-right:auto}.filetitle.svelte-rs1qzz.svelte-rs1qzz{color:var(--text-normal);font-size:var(--font-ui-medium);line-height:var(--line-height-tight);margin-right:auto}.buttons.svelte-rs1qzz.svelte-rs1qzz{display:flex;flex-direction:row;justify-content:flex-end;margin-top:8px;flex-wrap:wrap}.buttons.svelte-rs1qzz>button.svelte-rs1qzz{margin-left:4px;width:auto}label.svelte-rs1qzz.svelte-rs1qzz{display:flex;justify-content:center;align-items:center}label.svelte-rs1qzz>span.svelte-rs1qzz{margin-right:0.25em}.is-mobile .title.svelte-rs1qzz.svelte-rs1qzz,.is-mobile .filetitle.svelte-rs1qzz.svelte-rs1qzz{width:100%}.center.svelte-rs1qzz.svelte-rs1qzz{display:flex;justify-content:center;align-items:center;min-height:3em}");
+}
+function get_each_context3(ctx, list, i) {
+  const child_ctx = ctx.slice();
+  child_ctx[29] = list[i][0];
+  child_ctx[30] = list[i][1];
+  return child_ctx;
+}
+function get_each_context_12(ctx, list, i) {
+  const child_ctx = ctx.slice();
+  child_ctx[33] = list[i][0];
+  child_ctx[34] = list[i][1];
+  return child_ctx;
+}
+function get_each_context_2(ctx, list, i) {
+  const child_ctx = ctx.slice();
+  child_ctx[29] = list[i][0];
+  child_ctx[30] = list[i][1];
+  return child_ctx;
+}
+function create_if_block_23(ctx) {
+  let button;
+  let mounted;
+  let dispose;
+  return {
+    c() {
+      button = element("button");
+      button.textContent = "Reload";
+      attr(button, "class", "svelte-rs1qzz");
+    },
+    m(target, anchor) {
+      insert(target, button, anchor);
+      if (!mounted) {
+        dispose = listen(button, "click", ctx[20]);
+        mounted = true;
+      }
+    },
+    p: noop,
+    d(detaching) {
+      if (detaching)
+        detach(button);
+      mounted = false;
+      dispose();
+    }
+  };
+}
+function create_if_block_13(ctx) {
+  let div;
+  return {
+    c() {
+      div = element("div");
+      div.innerHTML = `<span>Updating list...</span>`;
+    },
+    m(target, anchor) {
+      insert(target, div, anchor);
+    },
+    d(detaching) {
+      if (detaching)
+        detach(div);
+    }
+  };
+}
+function create_else_block3(ctx) {
+  let t0;
+  let div;
+  let h3;
+  let t2;
+  let current;
+  let each_value_1 = Object.entries(ctx[7]);
+  let each_blocks_1 = [];
+  for (let i = 0; i < each_value_1.length; i += 1) {
+    each_blocks_1[i] = create_each_block_12(get_each_context_12(ctx, each_value_1, i));
+  }
+  const out = (i) => transition_out(each_blocks_1[i], 1, 1, () => {
+    each_blocks_1[i] = null;
+  });
+  let each_value = groupBy(filterList(ctx[1], ["PLUGIN_MAIN", "PLUGIN_DATA", "PLUGIN_ETC"]), "name");
+  let each_blocks = [];
+  for (let i = 0; i < each_value.length; i += 1) {
+    each_blocks[i] = create_each_block3(get_each_context3(ctx, each_value, i));
+  }
+  const out_1 = (i) => transition_out(each_blocks[i], 1, 1, () => {
+    each_blocks[i] = null;
+  });
+  return {
+    c() {
+      for (let i = 0; i < each_blocks_1.length; i += 1) {
+        each_blocks_1[i].c();
+      }
+      t0 = space();
+      div = element("div");
+      h3 = element("h3");
+      h3.textContent = "Plugins";
+      t2 = space();
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        each_blocks[i].c();
+      }
+    },
+    m(target, anchor) {
+      for (let i = 0; i < each_blocks_1.length; i += 1) {
+        if (each_blocks_1[i]) {
+          each_blocks_1[i].m(target, anchor);
+        }
+      }
+      insert(target, t0, anchor);
+      insert(target, div, anchor);
+      append(div, h3);
+      append(div, t2);
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        if (each_blocks[i]) {
+          each_blocks[i].m(div, null);
+        }
+      }
+      current = true;
+    },
+    p(ctx2, dirty) {
+      if (dirty[0] & 150) {
+        each_value_1 = Object.entries(ctx2[7]);
+        let i;
+        for (i = 0; i < each_value_1.length; i += 1) {
+          const child_ctx = get_each_context_12(ctx2, each_value_1, i);
+          if (each_blocks_1[i]) {
+            each_blocks_1[i].p(child_ctx, dirty);
+            transition_in(each_blocks_1[i], 1);
+          } else {
+            each_blocks_1[i] = create_each_block_12(child_ctx);
+            each_blocks_1[i].c();
+            transition_in(each_blocks_1[i], 1);
+            each_blocks_1[i].m(t0.parentNode, t0);
+          }
+        }
+        group_outros();
+        for (i = each_value_1.length; i < each_blocks_1.length; i += 1) {
+          out(i);
+        }
+        check_outros();
+      }
+      if (dirty[0] & 22) {
+        each_value = groupBy(filterList(ctx2[1], ["PLUGIN_MAIN", "PLUGIN_DATA", "PLUGIN_ETC"]), "name");
+        let i;
+        for (i = 0; i < each_value.length; i += 1) {
+          const child_ctx = get_each_context3(ctx2, each_value, i);
+          if (each_blocks[i]) {
+            each_blocks[i].p(child_ctx, dirty);
+            transition_in(each_blocks[i], 1);
+          } else {
+            each_blocks[i] = create_each_block3(child_ctx);
+            each_blocks[i].c();
+            transition_in(each_blocks[i], 1);
+            each_blocks[i].m(div, null);
+          }
+        }
+        group_outros();
+        for (i = each_value.length; i < each_blocks.length; i += 1) {
+          out_1(i);
+        }
+        check_outros();
+      }
+    },
+    i(local) {
+      if (current)
+        return;
+      for (let i = 0; i < each_value_1.length; i += 1) {
+        transition_in(each_blocks_1[i]);
+      }
+      for (let i = 0; i < each_value.length; i += 1) {
+        transition_in(each_blocks[i]);
+      }
+      current = true;
+    },
+    o(local) {
+      each_blocks_1 = each_blocks_1.filter(Boolean);
+      for (let i = 0; i < each_blocks_1.length; i += 1) {
+        transition_out(each_blocks_1[i]);
+      }
+      each_blocks = each_blocks.filter(Boolean);
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        transition_out(each_blocks[i]);
+      }
+      current = false;
+    },
+    d(detaching) {
+      destroy_each(each_blocks_1, detaching);
+      if (detaching)
+        detach(t0);
+      if (detaching)
+        detach(div);
+      destroy_each(each_blocks, detaching);
+    }
+  };
+}
+function create_if_block3(ctx) {
+  let div;
+  return {
+    c() {
+      div = element("div");
+      div.textContent = "No Items.";
+      attr(div, "class", "center svelte-rs1qzz");
+    },
+    m(target, anchor) {
+      insert(target, div, anchor);
+    },
+    p: noop,
+    i: noop,
+    o: noop,
+    d(detaching) {
+      if (detaching)
+        detach(div);
+    }
+  };
+}
+function create_each_block_2(ctx) {
+  let div1;
+  let div0;
+  let t0_value = ctx[29] + "";
+  let t0;
+  let t1;
+  let plugincombo;
+  let div1_class_value;
+  let current;
+  const plugincombo_spread_levels = [ctx[4], { list: ctx[30] }, { hidden: false }];
+  let plugincombo_props = {};
+  for (let i = 0; i < plugincombo_spread_levels.length; i += 1) {
+    plugincombo_props = assign(plugincombo_props, plugincombo_spread_levels[i]);
+  }
+  plugincombo = new PluginCombo_default({ props: plugincombo_props });
+  return {
+    c() {
+      div1 = element("div");
+      div0 = element("div");
+      t0 = text(t0_value);
+      t1 = space();
+      create_component(plugincombo.$$.fragment);
+      attr(div0, "class", "title svelte-rs1qzz");
+      attr(div1, "class", div1_class_value = "labelrow " + (ctx[2] ? "hideeven" : "") + " svelte-rs1qzz");
+    },
+    m(target, anchor) {
+      insert(target, div1, anchor);
+      append(div1, div0);
+      append(div0, t0);
+      append(div1, t1);
+      mount_component(plugincombo, div1, null);
+      current = true;
+    },
+    p(ctx2, dirty) {
+      if ((!current || dirty[0] & 2) && t0_value !== (t0_value = ctx2[29] + ""))
+        set_data(t0, t0_value);
+      const plugincombo_changes = dirty[0] & 146 ? get_spread_update(plugincombo_spread_levels, [
+        dirty[0] & 16 && get_spread_object(ctx2[4]),
+        dirty[0] & 130 && { list: ctx2[30] },
+        plugincombo_spread_levels[2]
+      ]) : {};
+      plugincombo.$set(plugincombo_changes);
+      if (!current || dirty[0] & 4 && div1_class_value !== (div1_class_value = "labelrow " + (ctx2[2] ? "hideeven" : "") + " svelte-rs1qzz")) {
+        attr(div1, "class", div1_class_value);
+      }
+    },
+    i(local) {
+      if (current)
+        return;
+      transition_in(plugincombo.$$.fragment, local);
+      current = true;
+    },
+    o(local) {
+      transition_out(plugincombo.$$.fragment, local);
+      current = false;
+    },
+    d(detaching) {
+      if (detaching)
+        detach(div1);
+      destroy_component(plugincombo);
+    }
+  };
+}
+function create_each_block_12(ctx) {
+  let div;
+  let h3;
+  let t0_value = ctx[34] + "";
+  let t0;
+  let t1;
+  let current;
+  let each_value_2 = groupBy(filterList(ctx[1], [ctx[33]]), "name");
+  let each_blocks = [];
+  for (let i = 0; i < each_value_2.length; i += 1) {
+    each_blocks[i] = create_each_block_2(get_each_context_2(ctx, each_value_2, i));
+  }
+  const out = (i) => transition_out(each_blocks[i], 1, 1, () => {
+    each_blocks[i] = null;
+  });
+  return {
+    c() {
+      div = element("div");
+      h3 = element("h3");
+      t0 = text(t0_value);
+      t1 = space();
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        each_blocks[i].c();
+      }
+    },
+    m(target, anchor) {
+      insert(target, div, anchor);
+      append(div, h3);
+      append(h3, t0);
+      append(div, t1);
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        if (each_blocks[i]) {
+          each_blocks[i].m(div, null);
+        }
+      }
+      current = true;
+    },
+    p(ctx2, dirty) {
+      if (dirty[0] & 150) {
+        each_value_2 = groupBy(filterList(ctx2[1], [ctx2[33]]), "name");
+        let i;
+        for (i = 0; i < each_value_2.length; i += 1) {
+          const child_ctx = get_each_context_2(ctx2, each_value_2, i);
+          if (each_blocks[i]) {
+            each_blocks[i].p(child_ctx, dirty);
+            transition_in(each_blocks[i], 1);
+          } else {
+            each_blocks[i] = create_each_block_2(child_ctx);
+            each_blocks[i].c();
+            transition_in(each_blocks[i], 1);
+            each_blocks[i].m(div, null);
+          }
+        }
+        group_outros();
+        for (i = each_value_2.length; i < each_blocks.length; i += 1) {
+          out(i);
+        }
+        check_outros();
+      }
+    },
+    i(local) {
+      if (current)
+        return;
+      for (let i = 0; i < each_value_2.length; i += 1) {
+        transition_in(each_blocks[i]);
+      }
+      current = true;
+    },
+    o(local) {
+      each_blocks = each_blocks.filter(Boolean);
+      for (let i = 0; i < each_blocks.length; i += 1) {
+        transition_out(each_blocks[i]);
+      }
+      current = false;
+    },
+    d(detaching) {
+      if (detaching)
+        detach(div);
+      destroy_each(each_blocks, detaching);
+    }
+  };
+}
+function create_each_block3(ctx) {
+  let div1;
+  let div0;
+  let t0_value = ctx[29] + "";
+  let t0;
+  let t1;
+  let plugincombo0;
+  let div1_class_value;
+  let t2;
+  let div3;
+  let div2;
+  let t4;
+  let plugincombo1;
+  let div3_class_value;
+  let t5;
+  let div5;
+  let div4;
+  let t7;
+  let plugincombo2;
+  let t8;
+  let div5_class_value;
+  let current;
+  const plugincombo0_spread_levels = [ctx[4], { list: ctx[30] }, { hidden: true }];
+  let plugincombo0_props = {};
+  for (let i = 0; i < plugincombo0_spread_levels.length; i += 1) {
+    plugincombo0_props = assign(plugincombo0_props, plugincombo0_spread_levels[i]);
+  }
+  plugincombo0 = new PluginCombo_default({ props: plugincombo0_props });
+  const plugincombo1_spread_levels = [
+    ctx[4],
+    {
+      list: filterList(ctx[30], ["PLUGIN_MAIN"])
+    },
+    { hidden: false }
+  ];
+  let plugincombo1_props = {};
+  for (let i = 0; i < plugincombo1_spread_levels.length; i += 1) {
+    plugincombo1_props = assign(plugincombo1_props, plugincombo1_spread_levels[i]);
+  }
+  plugincombo1 = new PluginCombo_default({ props: plugincombo1_props });
+  const plugincombo2_spread_levels = [
+    ctx[4],
+    {
+      list: filterList(ctx[30], ["PLUGIN_DATA"])
+    },
+    { hidden: false }
+  ];
+  let plugincombo2_props = {};
+  for (let i = 0; i < plugincombo2_spread_levels.length; i += 1) {
+    plugincombo2_props = assign(plugincombo2_props, plugincombo2_spread_levels[i]);
+  }
+  plugincombo2 = new PluginCombo_default({ props: plugincombo2_props });
+  return {
+    c() {
+      div1 = element("div");
+      div0 = element("div");
+      t0 = text(t0_value);
+      t1 = space();
+      create_component(plugincombo0.$$.fragment);
+      t2 = space();
+      div3 = element("div");
+      div2 = element("div");
+      div2.textContent = "Main";
+      t4 = space();
+      create_component(plugincombo1.$$.fragment);
+      t5 = space();
+      div5 = element("div");
+      div4 = element("div");
+      div4.textContent = "Data";
+      t7 = space();
+      create_component(plugincombo2.$$.fragment);
+      t8 = space();
+      attr(div0, "class", "title svelte-rs1qzz");
+      attr(div1, "class", div1_class_value = "labelrow " + (ctx[2] ? "hideeven" : "") + " svelte-rs1qzz");
+      attr(div2, "class", "filetitle svelte-rs1qzz");
+      attr(div3, "class", div3_class_value = "filerow " + (ctx[2] ? "hideeven" : "") + " svelte-rs1qzz");
+      attr(div4, "class", "filetitle svelte-rs1qzz");
+      attr(div5, "class", div5_class_value = "filerow " + (ctx[2] ? "hideeven" : "") + " svelte-rs1qzz");
+    },
+    m(target, anchor) {
+      insert(target, div1, anchor);
+      append(div1, div0);
+      append(div0, t0);
+      append(div1, t1);
+      mount_component(plugincombo0, div1, null);
+      insert(target, t2, anchor);
+      insert(target, div3, anchor);
+      append(div3, div2);
+      append(div3, t4);
+      mount_component(plugincombo1, div3, null);
+      insert(target, t5, anchor);
+      insert(target, div5, anchor);
+      append(div5, div4);
+      append(div5, t7);
+      mount_component(plugincombo2, div5, null);
+      append(div5, t8);
+      current = true;
+    },
+    p(ctx2, dirty) {
+      if ((!current || dirty[0] & 2) && t0_value !== (t0_value = ctx2[29] + ""))
+        set_data(t0, t0_value);
+      const plugincombo0_changes = dirty[0] & 18 ? get_spread_update(plugincombo0_spread_levels, [
+        dirty[0] & 16 && get_spread_object(ctx2[4]),
+        dirty[0] & 2 && { list: ctx2[30] },
+        plugincombo0_spread_levels[2]
+      ]) : {};
+      plugincombo0.$set(plugincombo0_changes);
+      if (!current || dirty[0] & 4 && div1_class_value !== (div1_class_value = "labelrow " + (ctx2[2] ? "hideeven" : "") + " svelte-rs1qzz")) {
+        attr(div1, "class", div1_class_value);
+      }
+      const plugincombo1_changes = dirty[0] & 18 ? get_spread_update(plugincombo1_spread_levels, [
+        dirty[0] & 16 && get_spread_object(ctx2[4]),
+        dirty[0] & 2 && {
+          list: filterList(ctx2[30], ["PLUGIN_MAIN"])
+        },
+        plugincombo1_spread_levels[2]
+      ]) : {};
+      plugincombo1.$set(plugincombo1_changes);
+      if (!current || dirty[0] & 4 && div3_class_value !== (div3_class_value = "filerow " + (ctx2[2] ? "hideeven" : "") + " svelte-rs1qzz")) {
+        attr(div3, "class", div3_class_value);
+      }
+      const plugincombo2_changes = dirty[0] & 18 ? get_spread_update(plugincombo2_spread_levels, [
+        dirty[0] & 16 && get_spread_object(ctx2[4]),
+        dirty[0] & 2 && {
+          list: filterList(ctx2[30], ["PLUGIN_DATA"])
+        },
+        plugincombo2_spread_levels[2]
+      ]) : {};
+      plugincombo2.$set(plugincombo2_changes);
+      if (!current || dirty[0] & 4 && div5_class_value !== (div5_class_value = "filerow " + (ctx2[2] ? "hideeven" : "") + " svelte-rs1qzz")) {
+        attr(div5, "class", div5_class_value);
+      }
+    },
+    i(local) {
+      if (current)
+        return;
+      transition_in(plugincombo0.$$.fragment, local);
+      transition_in(plugincombo1.$$.fragment, local);
+      transition_in(plugincombo2.$$.fragment, local);
+      current = true;
+    },
+    o(local) {
+      transition_out(plugincombo0.$$.fragment, local);
+      transition_out(plugincombo1.$$.fragment, local);
+      transition_out(plugincombo2.$$.fragment, local);
+      current = false;
+    },
+    d(detaching) {
+      if (detaching)
+        detach(div1);
+      destroy_component(plugincombo0);
+      if (detaching)
+        detach(t2);
+      if (detaching)
+        detach(div3);
+      destroy_component(plugincombo1);
+      if (detaching)
+        detach(t5);
       if (detaching)
         detach(div5);
-      if_block.d();
+      destroy_component(plugincombo2);
+    }
+  };
+}
+function create_fragment3(ctx) {
+  let div6;
+  let div2;
+  let h1;
+  let t1;
+  let div0;
+  let button0;
+  let t3;
+  let button1;
+  let t5;
+  let button2;
+  let t7;
+  let t8;
+  let button3;
+  let t10;
+  let div1;
+  let button4;
+  let t12;
+  let t13;
+  let div3;
+  let current_block_type_index;
+  let if_block2;
+  let t14;
+  let div4;
+  let label0;
+  let span0;
+  let input0;
+  let t16;
+  let div5;
+  let label1;
+  let span1;
+  let input1;
+  let current;
+  let mounted;
+  let dispose;
+  let if_block0 = ctx[0] && create_if_block_23(ctx);
+  let if_block1 = ctx[3] && create_if_block_13(ctx);
+  const if_block_creators = [create_if_block3, create_else_block3];
+  const if_blocks = [];
+  function select_block_type(ctx2, dirty) {
+    if (ctx2[1].length == 0)
+      return 0;
+    return 1;
+  }
+  current_block_type_index = select_block_type(ctx, [-1, -1]);
+  if_block2 = if_blocks[current_block_type_index] = if_block_creators[current_block_type_index](ctx);
+  return {
+    c() {
+      div6 = element("div");
+      div2 = element("div");
+      h1 = element("h1");
+      h1.textContent = "Customization sync";
+      t1 = space();
+      div0 = element("div");
+      button0 = element("button");
+      button0.textContent = "Scan changes";
+      t3 = space();
+      button1 = element("button");
+      button1.textContent = "Sync once";
+      t5 = space();
+      button2 = element("button");
+      button2.textContent = "Refresh";
+      t7 = space();
+      if (if_block0)
+        if_block0.c();
+      t8 = space();
+      button3 = element("button");
+      button3.textContent = "Select All Shiny";
+      t10 = space();
+      div1 = element("div");
+      button4 = element("button");
+      button4.textContent = "Apply All";
+      t12 = space();
+      if (if_block1)
+        if_block1.c();
+      t13 = space();
+      div3 = element("div");
+      if_block2.c();
+      t14 = space();
+      div4 = element("div");
+      label0 = element("label");
+      span0 = element("span");
+      span0.textContent = "Hide not applicable items";
+      input0 = element("input");
+      t16 = space();
+      div5 = element("div");
+      label1 = element("label");
+      span1 = element("span");
+      span1.textContent = "Maintenance mode";
+      input1 = element("input");
+      attr(button0, "class", "svelte-rs1qzz");
+      attr(button1, "class", "svelte-rs1qzz");
+      attr(button2, "class", "svelte-rs1qzz");
+      attr(button3, "class", "svelte-rs1qzz");
+      attr(div0, "class", "buttons svelte-rs1qzz");
+      attr(button4, "class", "svelte-rs1qzz");
+      attr(div1, "class", "buttons svelte-rs1qzz");
+      attr(div3, "class", "list");
+      attr(span0, "class", "svelte-rs1qzz");
+      attr(input0, "type", "checkbox");
+      attr(label0, "class", "svelte-rs1qzz");
+      attr(div4, "class", "buttons svelte-rs1qzz");
+      attr(span1, "class", "svelte-rs1qzz");
+      attr(input1, "type", "checkbox");
+      attr(label1, "class", "svelte-rs1qzz");
+      attr(div5, "class", "buttons svelte-rs1qzz");
+    },
+    m(target, anchor) {
+      insert(target, div6, anchor);
+      append(div6, div2);
+      append(div2, h1);
+      append(div2, t1);
+      append(div2, div0);
+      append(div0, button0);
+      append(div0, t3);
+      append(div0, button1);
+      append(div0, t5);
+      append(div0, button2);
+      append(div0, t7);
+      if (if_block0)
+        if_block0.m(div0, null);
+      append(div0, t8);
+      append(div0, button3);
+      append(div2, t10);
+      append(div2, div1);
+      append(div1, button4);
+      append(div6, t12);
+      if (if_block1)
+        if_block1.m(div6, null);
+      append(div6, t13);
+      append(div6, div3);
+      if_blocks[current_block_type_index].m(div3, null);
+      append(div6, t14);
+      append(div6, div4);
+      append(div4, label0);
+      append(label0, span0);
+      append(label0, input0);
+      input0.checked = ctx[2];
+      append(div6, t16);
+      append(div6, div5);
+      append(div5, label1);
+      append(label1, span1);
+      append(label1, input1);
+      input1.checked = ctx[0];
+      current = true;
+      if (!mounted) {
+        dispose = [
+          listen(button0, "click", ctx[17]),
+          listen(button1, "click", ctx[18]),
+          listen(button2, "click", ctx[19]),
+          listen(button3, "click", ctx[21]),
+          listen(button4, "click", ctx[22]),
+          listen(input0, "change", ctx[23]),
+          listen(input1, "change", ctx[24])
+        ];
+        mounted = true;
+      }
+    },
+    p(ctx2, dirty) {
+      if (ctx2[0]) {
+        if (if_block0) {
+          if_block0.p(ctx2, dirty);
+        } else {
+          if_block0 = create_if_block_23(ctx2);
+          if_block0.c();
+          if_block0.m(div0, t8);
+        }
+      } else if (if_block0) {
+        if_block0.d(1);
+        if_block0 = null;
+      }
+      if (ctx2[3]) {
+        if (if_block1) {
+        } else {
+          if_block1 = create_if_block_13(ctx2);
+          if_block1.c();
+          if_block1.m(div6, t13);
+        }
+      } else if (if_block1) {
+        if_block1.d(1);
+        if_block1 = null;
+      }
+      let previous_block_index = current_block_type_index;
+      current_block_type_index = select_block_type(ctx2, dirty);
+      if (current_block_type_index === previous_block_index) {
+        if_blocks[current_block_type_index].p(ctx2, dirty);
+      } else {
+        group_outros();
+        transition_out(if_blocks[previous_block_index], 1, 1, () => {
+          if_blocks[previous_block_index] = null;
+        });
+        check_outros();
+        if_block2 = if_blocks[current_block_type_index];
+        if (!if_block2) {
+          if_block2 = if_blocks[current_block_type_index] = if_block_creators[current_block_type_index](ctx2);
+          if_block2.c();
+        } else {
+          if_block2.p(ctx2, dirty);
+        }
+        transition_in(if_block2, 1);
+        if_block2.m(div3, null);
+      }
+      if (dirty[0] & 4) {
+        input0.checked = ctx2[2];
+      }
+      if (dirty[0] & 1) {
+        input1.checked = ctx2[0];
+      }
+    },
+    i(local) {
+      if (current)
+        return;
+      transition_in(if_block2);
+      current = true;
+    },
+    o(local) {
+      transition_out(if_block2);
+      current = false;
+    },
+    d(detaching) {
+      if (detaching)
+        detach(div6);
+      if (if_block0)
+        if_block0.d();
+      if (if_block1)
+        if_block1.d();
+      if_blocks[current_block_type_index].d();
       mounted = false;
       run_all(dispose);
     }
   };
 }
-function getDispString(stat) {
-  if (stat == "")
-    return "";
-  if (stat == "NEWER")
-    return " (Newer)";
-  if (stat == "OLDER")
-    return " (Older)";
-  if (stat == "EVEN")
-    return " (Even)";
-  if (stat == "EVEN_BUT_DIFFERENT")
-    return " (Even but different)";
-  if (stat == "REMOTE_ONLY")
-    return " (Remote Only)";
-  return "";
+function filterList(list, categories) {
+  const w = list.filter((e2) => categories.indexOf(e2.category) !== -1);
+  return w.sort((a2, b) => `${a2.category}-${a2.name}`.localeCompare(`${b.category}-${b.name}`));
 }
-function instance($$self, $$props, $$invalidate) {
-  var _a, _b, _c, _d;
+function groupBy(items, key) {
+  let ret = {};
+  for (const v of items) {
+    const k = key in v ? v[key] : "";
+    ret[k] = ret[k] || [];
+    ret[k].push(v);
+  }
+  for (const k in ret) {
+    ret[k] = ret[k].sort((a2, b) => `${a2.category}-${a2.name}`.localeCompare(`${b.category}-${b.name}`));
+  }
+  const w = Object.entries(ret);
+  return w.sort(([a2], [b]) => `${a2}`.localeCompare(`${b}`));
+}
+function instance3($$self, $$props, $$invalidate) {
+  let hideNotApplicable;
+  let thisTerm;
+  let options;
   let { plugin: plugin2 } = $$props;
-  let plugins = [];
-  let deviceAndPlugins = {};
-  let devicePluginList = null;
-  let ownPlugins = null;
-  let showOwnPlugins = false;
-  let targetList = {};
-  let addOn;
-  function saveTargetList() {
-    window.localStorage.setItem("ols-plugin-targetlist", JSON.stringify(targetList));
+  const addOn = plugin2.addOnConfigSync;
+  let list = [];
+  let selectNewestPulse = 0;
+  let hideEven = true;
+  let loading = false;
+  let applyAllPluse = 0;
+  let isMaintenanceMode = false;
+  async function requestUpdate() {
+    await addOn.updatePluginList(true);
   }
-  function loadTargetList() {
-    let e2 = window.localStorage.getItem("ols-plugin-targetlist") || "{}";
-    try {
-      $$invalidate(3, targetList = JSON.parse(e2));
-    } catch (_) {
-    }
+  async function requestReload() {
+    await addOn.reloadPluginList(true);
   }
-  function clearSelection() {
-    $$invalidate(3, targetList = {});
-  }
-  async function updateList() {
-    let x = await addOn.getPluginList();
-    $$invalidate(18, ownPlugins = x.thisDevicePlugins);
-    $$invalidate(16, plugins = Object.values(x.allPlugins));
-    let targetListItems = Array.from(new Set(plugins.map((e2) => e2.deviceVaultName + "---" + e2.manifest.id)));
-    let newTargetList = {};
-    for (const id of targetListItems) {
-      for (const tag of ["---plugin", "---setting"]) {
-        newTargetList[id + tag] = id + tag in targetList && targetList[id + tag];
-      }
-    }
-    $$invalidate(3, targetList = newTargetList);
-    saveTargetList();
-  }
-  onMount(async () => {
-    loadTargetList();
-    await updateList();
+  pluginList.subscribe((e2) => {
+    $$invalidate(1, list = e2);
   });
-  function toggleShowOwnPlugins() {
-    $$invalidate(1, showOwnPlugins = !showOwnPlugins);
+  pluginIsEnumerating.subscribe((e2) => {
+    $$invalidate(3, loading = e2);
+  });
+  onMount(async () => {
+    requestUpdate();
+  });
+  const displays = {
+    CONFIG: "Configuration",
+    THEME: "Themes",
+    SNIPPET: "Snippets"
+  };
+  async function scanAgain() {
+    await addOn.scanAllConfigFiles(true);
+    await requestUpdate();
   }
-  function toggleTarget(key) {
-    $$invalidate(3, targetList[key] = !targetList[key], targetList);
-    saveTargetList();
-  }
-  function toggleAll(devicename) {
-    for (const c in targetList) {
-      if (c.startsWith(devicename)) {
-        $$invalidate(3, targetList[c] = true, targetList);
-      }
-    }
-  }
-  async function sweepPlugins() {
-    await plugin2.app.plugins.loadManifests();
-    await addOn.sweepPlugin(true);
-    updateList();
-  }
-  async function applyPlugins() {
-    for (const c in targetList) {
-      if (targetList[c] == true) {
-        const [deviceAndVault, id, opt] = c.split("---");
-        if (deviceAndVault in deviceAndPlugins) {
-          const entry = deviceAndPlugins[deviceAndVault].find((e2) => e2.manifest.id == id);
-          if (entry) {
-            if (opt == "plugin") {
-              if (entry.versionFlag != "EVEN")
-                await addOn.applyPlugin(entry);
-            } else if (opt == "setting") {
-              if (entry.mtimeFlag != "EVEN")
-                await addOn.applyPluginData(entry);
-            }
-          }
-        }
-      }
-    }
-    await plugin2.app.plugins.loadManifests();
-    await addOn.sweepPlugin(true);
-    updateList();
-  }
-  async function checkUpdates() {
-    await addOn.checkPluginUpdate();
-  }
-  async function replicateAndRefresh() {
+  async function replicate2() {
     await plugin2.replicate(true);
-    updateList();
   }
-  const click_handler = (deviceName) => toggleAll(deviceName);
-  const click_handler_1 = (plugin3) => toggleTarget(plugin3.deviceVaultName + "---" + plugin3.manifest.id + "---plugin");
-  const click_handler_2 = (plugin3) => toggleTarget(plugin3.deviceVaultName + "---" + plugin3.manifest.id + "---setting");
+  function selectAllNewest() {
+    $$invalidate(13, selectNewestPulse++, selectNewestPulse);
+  }
+  function applyAll() {
+    $$invalidate(14, applyAllPluse++, applyAllPluse);
+  }
+  async function applyData(data) {
+    return await addOn.applyData(data);
+  }
+  async function compareData(docA, docB) {
+    return await addOn.compareUsingDisplayData(docA, docB);
+  }
+  async function deleteData(data) {
+    return await addOn.deleteData(data);
+  }
+  const click_handler = () => scanAgain();
+  const click_handler_1 = () => replicate2();
+  const click_handler_2 = () => requestUpdate();
+  const click_handler_3 = () => requestReload();
+  const click_handler_4 = () => selectAllNewest();
+  const click_handler_5 = () => applyAll();
+  function input0_change_handler() {
+    hideEven = this.checked;
+    $$invalidate(2, hideEven);
+  }
+  function input1_change_handler() {
+    isMaintenanceMode = this.checked;
+    $$invalidate(0, isMaintenanceMode);
+  }
   $$self.$$set = ($$props2) => {
     if ("plugin" in $$props2)
-      $$invalidate(0, plugin2 = $$props2.plugin);
+      $$invalidate(12, plugin2 = $$props2.plugin);
   };
   $$self.$$.update = () => {
-    if ($$self.$$.dirty[0] & 1) {
-      $: {
-        const f3 = plugin2.addOns.filter((e2) => e2 instanceof PluginAndTheirSettings);
-        if (f3 && f3.length > 0) {
-          addOn = f3[0];
-        }
-      }
+    if ($$self.$$.dirty[0] & 4096) {
+      $:
+        $$invalidate(16, thisTerm = plugin2.deviceAndVaultName);
     }
-    if ($$self.$$.dirty[0] & 520195) {
-      $: {
-        $$invalidate(17, deviceAndPlugins = {});
-        for (const p of plugins) {
-          if (p.deviceVaultName == plugin2.deviceAndVaultName && !showOwnPlugins) {
-            continue;
-          }
-          if (!(p.deviceVaultName in deviceAndPlugins)) {
-            $$invalidate(17, deviceAndPlugins[p.deviceVaultName] = [], deviceAndPlugins);
-          }
-          let dispInfo = {
-            ...p,
-            versionInfo: "",
-            mtimeInfo: "",
-            versionFlag: "",
-            mtimeFlag: ""
-          };
-          dispInfo.versionInfo = p.manifest.version;
-          let x = new Date().getTime() / 1e3;
-          let mtime = p.mtime / 1e3;
-          let diff = (x - mtime) / 60;
-          if (p.mtime == 0) {
-            dispInfo.mtimeInfo = `-`;
-          } else if (diff < 60) {
-            dispInfo.mtimeInfo = `${diff | 0} Mins ago`;
-          } else if (diff < 60 * 24) {
-            dispInfo.mtimeInfo = `${diff / 60 | 0} Hours ago`;
-          } else if (diff < 60 * 24 * 10) {
-            dispInfo.mtimeInfo = `${diff / (60 * 24) | 0} Days ago`;
-          } else {
-            dispInfo.mtimeInfo = new Date(dispInfo.mtime).toLocaleString();
-          }
-          let id = p.manifest.id;
-          if (id in ownPlugins) {
-            const ownPlugin = ownPlugins[id];
-            let localVer = versionNumberString2Number(ownPlugin.manifest.version);
-            let pluginVer = versionNumberString2Number(p.manifest.version);
-            if (localVer > pluginVer) {
-              dispInfo.versionFlag = "OLDER";
-            } else if (localVer == pluginVer) {
-              if (ownPlugin.manifestJson + ($$invalidate(12, _a = ownPlugin.styleCss) !== null && _a !== void 0 ? _a : "") + ownPlugin.mainJs != p.manifestJson + ($$invalidate(13, _b = p.styleCss) !== null && _b !== void 0 ? _b : "") + p.mainJs) {
-                dispInfo.versionFlag = "EVEN_BUT_DIFFERENT";
-              } else {
-                dispInfo.versionFlag = "EVEN";
-              }
-            } else if (localVer < pluginVer) {
-              dispInfo.versionFlag = "NEWER";
-            }
-            if (($$invalidate(14, _c = ownPlugin.dataJson) !== null && _c !== void 0 ? _c : "") == ($$invalidate(15, _d = p.dataJson) !== null && _d !== void 0 ? _d : "")) {
-              if (ownPlugin.mtime == 0 && p.mtime == 0) {
-                dispInfo.mtimeFlag = "";
-              } else {
-                dispInfo.mtimeFlag = "EVEN";
-              }
-            } else {
-              if ((ownPlugin.mtime / 1e3 | 0) > (p.mtime / 1e3 | 0)) {
-                dispInfo.mtimeFlag = "OLDER";
-              } else if ((ownPlugin.mtime / 1e3 | 0) == (p.mtime / 1e3 | 0)) {
-                dispInfo.mtimeFlag = "EVEN_BUT_DIFFERENT";
-              } else if ((ownPlugin.mtime / 1e3 | 0) < (p.mtime / 1e3 | 0)) {
-                dispInfo.mtimeFlag = "NEWER";
-              }
-            }
-          } else {
-            dispInfo.versionFlag = "REMOTE_ONLY";
-            dispInfo.mtimeFlag = "REMOTE_ONLY";
-          }
-          deviceAndPlugins[p.deviceVaultName].push(dispInfo);
-        }
-        $$invalidate(2, devicePluginList = Object.entries(deviceAndPlugins));
-      }
+    if ($$self.$$.dirty[0] & 126977) {
+      $:
+        $$invalidate(4, options = {
+          thisTerm,
+          hideNotApplicable,
+          selectNewest: selectNewestPulse,
+          applyAllPluse,
+          applyData,
+          compareData,
+          deleteData,
+          plugin: plugin2,
+          isMaintenanceMode
+        });
     }
   };
+  $:
+    $$invalidate(15, hideNotApplicable = true);
   return [
+    isMaintenanceMode,
+    list,
+    hideEven,
+    loading,
+    options,
+    requestUpdate,
+    requestReload,
+    displays,
+    scanAgain,
+    replicate2,
+    selectAllNewest,
+    applyAll,
     plugin2,
-    showOwnPlugins,
-    devicePluginList,
-    targetList,
-    clearSelection,
-    toggleShowOwnPlugins,
-    toggleTarget,
-    toggleAll,
-    sweepPlugins,
-    applyPlugins,
-    checkUpdates,
-    replicateAndRefresh,
-    _a,
-    _b,
-    _c,
-    _d,
-    plugins,
-    deviceAndPlugins,
-    ownPlugins,
+    selectNewestPulse,
+    applyAllPluse,
+    hideNotApplicable,
+    thisTerm,
     click_handler,
     click_handler_1,
-    click_handler_2
+    click_handler_2,
+    click_handler_3,
+    click_handler_4,
+    click_handler_5,
+    input0_change_handler,
+    input1_change_handler
   ];
 }
 var PluginPane = class extends SvelteComponent {
   constructor(options) {
     super();
-    init2(this, options, instance, create_fragment, safe_not_equal, { plugin: 0 }, add_css, [-1, -1]);
+    init2(this, options, instance3, create_fragment3, safe_not_equal, { plugin: 12 }, add_css3, [-1, -1]);
   }
 };
 var PluginPane_default = PluginPane;
@@ -16797,6 +19295,9 @@ var PluginDialogModal = class extends import_obsidian.Modal {
     super(app2);
     this.component = null;
     this.plugin = plugin2;
+  }
+  isOpened() {
+    return this.component != null;
   }
   onOpen() {
     const { contentEl } = this;
@@ -16886,17 +19387,122 @@ var PopoverSelectString = class extends import_obsidian.FuzzySuggestModal {
     }, 100);
   }
 };
+var MessageBox = class extends import_obsidian.Modal {
+  constructor(plugin2, title, contentMd, buttons, defaultAction, timeout, onSubmit) {
+    super(plugin2.app);
+    this.isManuallyClosed = false;
+    this.timer = void 0;
+    this.plugin = plugin2;
+    this.title = title;
+    this.contentMd = contentMd;
+    this.buttons = buttons;
+    this.onSubmit = onSubmit;
+    this.defaultAction = defaultAction;
+    this.timeout = timeout;
+    if (this.timeout) {
+      this.timer = setInterval(() => {
+        this.timeout--;
+        if (this.timeout < 0) {
+          if (this.timer) {
+            clearInterval(this.timer);
+            this.timer = void 0;
+          }
+          this.result = defaultAction;
+          this.isManuallyClosed = true;
+          this.close();
+        } else {
+          this.defaultButtonComponent.setButtonText(`( ${this.timeout} ) ${defaultAction}`);
+        }
+      }, 1e3);
+    }
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addEventListener("click", () => {
+      if (this.timer) {
+        clearInterval(this.timer);
+        this.timer = void 0;
+      }
+    });
+    contentEl.createEl("h1", { text: this.title });
+    const div = contentEl.createDiv();
+    import_obsidian.MarkdownRenderer.renderMarkdown(this.contentMd, div, "/", null);
+    const buttonSetting = new import_obsidian.Setting(contentEl);
+    for (const button of this.buttons) {
+      buttonSetting.addButton(
+        (btn) => {
+          btn.setButtonText(button).onClick(() => {
+            this.isManuallyClosed = true;
+            this.result = button;
+            if (this.timer) {
+              clearInterval(this.timer);
+              this.timer = void 0;
+            }
+            this.close();
+          });
+          if (button == this.defaultAction) {
+            this.defaultButtonComponent = btn;
+          }
+          return btn;
+        }
+      );
+    }
+  }
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = void 0;
+    }
+    if (this.isManuallyClosed) {
+      this.onSubmit(this.result);
+    } else {
+      this.onSubmit(false);
+    }
+  }
+};
+function confirmWithMessage(plugin2, title, contentMd, buttons, defaultAction, timeout) {
+  return new Promise((res2) => {
+    const dialog = new MessageBox(plugin2, title, contentMd, buttons, defaultAction, timeout, (result) => res2(result));
+    dialog.open();
+  });
+}
 
 // src/utils.ts
-function path2id(filename) {
-  const x = (0, import_obsidian.normalizePath)(filename);
-  return path2id_base(x);
+async function path2id(filename, obfuscatePassphrase) {
+  const temp = filename.split(":");
+  const path = temp.pop();
+  const normalizedPath = normalizePath(path);
+  temp.push(normalizedPath);
+  const fixedPath = temp.join(":");
+  const out = await path2id_base(fixedPath, obfuscatePassphrase);
+  return out;
 }
-function id2path(filename) {
-  return id2path_base((0, import_obsidian.normalizePath)(filename));
+function id2path(id, entry) {
+  const filename = id2path_base(id, entry);
+  const temp = filename.split(":");
+  const path = temp.pop();
+  const normalizedPath = normalizePath(path);
+  temp.push(normalizedPath);
+  const fixedPath = temp.join(":");
+  return fixedPath;
+}
+function getPath2(entry) {
+  return id2path(entry._id, entry);
+}
+function getPathWithoutPrefix(entry) {
+  const f3 = getPath2(entry);
+  return stripAllPrefixes(f3);
+}
+function getPathFromTFile(file) {
+  return file.path;
 }
 var tasks = {};
-function scheduleTask(key, timeout, proc) {
+function scheduleTask(key, timeout, proc, skipIfTaskExist) {
+  if (skipIfTaskExist && key in tasks) {
+    return;
+  }
   cancelTask(key);
   tasks[key] = setTimeout(async () => {
     delete tasks[key];
@@ -17093,6 +19699,9 @@ function mergeObject(objA, objB) {
       ret[key] = v;
     }
   }
+  if (Array.isArray(objA) && Array.isArray(objB)) {
+    return Object.values(Object.entries(ret).sort().reduce((p, [key, value]) => ({ ...p, [key]: value }), {}));
+  }
   return Object.entries(ret).sort().reduce((p, [key, value]) => ({ ...p, [key]: value }), {});
 }
 function flattenObject(obj, path = []) {
@@ -17139,15 +19748,7 @@ function isValidPath(filename) {
 }
 var touchedFiles = [];
 function getAbstractFileByPath(path) {
-  var _a, _b;
-  if ("getAbstractFileByPathInsensitive" in app.vault && ((_b = (_a = app.vault.adapter) == null ? void 0 : _a.insensitive) != null ? _b : false)) {
-    return app.vault.getAbstractFileByPathInsensitive(path);
-  } else {
-    return app.vault.getAbstractFileByPath(path);
-  }
-}
-function trimPrefix(target, prefix) {
-  return target.startsWith(prefix) ? target.substring(prefix.length) : target;
+  return app.vault.getAbstractFileByPath(path);
 }
 function touch(file) {
   const f3 = file instanceof import_obsidian.TFile ? file : getAbstractFileByPath(file);
@@ -17164,14 +19765,11 @@ function recentlyTouched(file) {
 function clearTouched() {
   touchedFiles = [];
 }
-function isInternalMetadata(str) {
-  return str.startsWith(ICHeader);
+function isInternalMetadata(id) {
+  return id.startsWith(ICHeader);
 }
-function id2filenameInternalMetadata(str) {
-  return str.substring(ICHeaderLength);
-}
-function filename2idInternalMetadata(str) {
-  return ICHeader + str;
+function stripInternalMetadataPrefix(id) {
+  return id.substring(ICHeaderLength);
 }
 function isChunk(str) {
   return str.startsWith(CHeader);
@@ -17223,23 +19821,287 @@ var PeriodicProcessor = class {
       clearInterval(this._timer);
   }
 };
-
-// src/ObsidianLiveSyncSettingTab.ts
-var requestToCouchDB = async (baseUri, username, password, origin2, key, body) => {
+function sizeToHumanReadable(size) {
+  if (!size)
+    return "-";
+  const i = Math.floor(Math.log(size) / Math.log(1024));
+  return Number.parseInt((size / Math.pow(1024, i)).toFixed(2)) + " " + ["B", "kB", "MB", "GB", "TB"][i];
+}
+var _requestToCouchDBFetch = async (baseUri, username, password, path, body, method) => {
+  const utf8str = String.fromCharCode.apply(null, new TextEncoder().encode(`${username}:${password}`));
+  const encoded = window.btoa(utf8str);
+  const authHeader = "Basic " + encoded;
+  const transformedHeaders = { authorization: authHeader, "content-type": "application/json" };
+  const uri = `${baseUri}/${path}`;
+  const requestParam = {
+    url: uri,
+    method: method || (body ? "PUT" : "GET"),
+    headers: new Headers(transformedHeaders),
+    contentType: "application/json",
+    body: JSON.stringify(body)
+  };
+  return await fetch(uri, requestParam);
+};
+var _requestToCouchDB = async (baseUri, username, password, origin2, path, body, method) => {
   const utf8str = String.fromCharCode.apply(null, new TextEncoder().encode(`${username}:${password}`));
   const encoded = window.btoa(utf8str);
   const authHeader = "Basic " + encoded;
   const transformedHeaders = { authorization: authHeader, origin: origin2 };
-  const uri = `${baseUri}/_node/_local/_config${key ? "/" + key : ""}`;
+  const uri = `${baseUri}/${path}`;
   const requestParam = {
     url: uri,
-    method: body ? "PUT" : "GET",
+    method: method || (body ? "PUT" : "GET"),
     headers: transformedHeaders,
     contentType: "application/json",
     body: body ? JSON.stringify(body) : void 0
   };
   return await (0, import_obsidian.requestUrl)(requestParam);
 };
+var requestToCouchDB = async (baseUri, username, password, origin2, key, body, method) => {
+  const uri = `_node/_local/_config${key ? "/" + key : ""}`;
+  return await _requestToCouchDB(baseUri, username, password, origin2, uri, body, method);
+};
+async function performRebuildDB(plugin2, method) {
+  if (method == "localOnly") {
+    await plugin2.addOnSetup.fetchLocal();
+  }
+  if (method == "remoteOnly") {
+    await plugin2.addOnSetup.rebuildRemote();
+  }
+  if (method == "rebuildBothByThisDevice") {
+    await plugin2.addOnSetup.rebuildEverything();
+  }
+}
+var gatherChunkUsage = async (db) => {
+  const used = /* @__PURE__ */ new Map();
+  const unreferenced = /* @__PURE__ */ new Map();
+  const removed = /* @__PURE__ */ new Map();
+  const missing = /* @__PURE__ */ new Map();
+  const xx = await db.allDocs({ startkey: "h:", endkey: `h:\u{10FFFF}` });
+  for (const xxd of xx.rows) {
+    const chunk = xxd.id;
+    unreferenced.set(chunk, xxd.value.rev);
+  }
+  const x = await db.find({ limit: 999999999, selector: { children: { $exists: true, $type: "array" } }, fields: ["_id", "path", "mtime", "children"] });
+  for (const temp of x.docs) {
+    for (const chunk of temp.children) {
+      used.set(chunk, (used.has(chunk) ? used.get(chunk) : 0) + 1);
+      if (unreferenced.has(chunk)) {
+        removed.set(chunk, unreferenced.get(chunk));
+        unreferenced.delete(chunk);
+      } else {
+        if (!removed.has(chunk)) {
+          if (!missing.has(temp._id)) {
+            missing.set(temp._id, []);
+          }
+          missing.get(temp._id).push(chunk);
+        }
+      }
+    }
+  }
+  return { used, unreferenced, missing };
+};
+var localDatabaseCleanUp = async (plugin2, force, dryRun) => {
+  await runWithLock("clean-up:local", true, async () => {
+    const db = plugin2.localDatabase.localDatabase;
+    if ((db == null ? void 0 : db.adapter) != "indexeddb") {
+      if (force && !dryRun) {
+        Logger("Fetch from the remote database", LOG_LEVEL.NOTICE, "clean-up-db");
+        await performRebuildDB(plugin2, "localOnly");
+        return;
+      } else {
+        Logger("This feature requires disabling `Use an old adapter for compatibility`.", LOG_LEVEL.NOTICE, "clean-up-db");
+        return;
+      }
+    }
+    Logger(`The remote database has been locked for garbage collection`, LOG_LEVEL.NOTICE, "clean-up-db");
+    Logger(`Gathering chunk usage information`, LOG_LEVEL.NOTICE, "clean-up-db");
+    const { unreferenced, missing } = await gatherChunkUsage(db);
+    if (missing.size != 0) {
+      Logger(`Some chunks are not found! We have to rescue`, LOG_LEVEL.NOTICE);
+      Logger(missing, LOG_LEVEL.VERBOSE);
+    } else {
+      Logger(`All chunks are OK`, LOG_LEVEL.NOTICE);
+    }
+    const payload = {};
+    for (const [id, rev2] of unreferenced) {
+      payload[id] = [rev2];
+    }
+    const removeItems = Object.keys(payload).length;
+    if (removeItems == 0) {
+      Logger(`No unreferenced chunks found (Local)`, LOG_LEVEL.NOTICE);
+      await plugin2.markRemoteResolved();
+    }
+    if (dryRun) {
+      Logger(`There are ${removeItems} unreferenced chunks (Local)`, LOG_LEVEL.NOTICE);
+      return;
+    }
+    Logger(`Deleting unreferenced chunks: ${removeItems}`, LOG_LEVEL.NOTICE, "clean-up-db");
+    for (const [id, rev2] of unreferenced) {
+      const ret = await db.purge(id, rev2);
+      Logger(ret, LOG_LEVEL.VERBOSE);
+    }
+    plugin2.localDatabase.refreshSettings();
+    Logger(`Compacting local database...`, LOG_LEVEL.NOTICE, "clean-up-db");
+    await db.compact();
+    await plugin2.markRemoteResolved();
+    Logger("Done!", LOG_LEVEL.NOTICE, "clean-up-db");
+  });
+};
+var balanceChunks = async (plugin2, dryRun) => {
+  await runWithLock("clean-up:balance", true, async () => {
+    const localDB = plugin2.localDatabase.localDatabase;
+    Logger(`Gathering chunk usage information`, LOG_LEVEL.NOTICE, "clean-up-db");
+    const ret = await plugin2.replicator.connectRemoteCouchDBWithSetting(plugin2.settings, plugin2.isMobile);
+    if (typeof ret === "string") {
+      Logger(`Connect error: ${ret}`, LOG_LEVEL.NOTICE, "clean-up-db");
+      return;
+    }
+    const localChunks = /* @__PURE__ */ new Map();
+    const xx = await localDB.allDocs({ startkey: "h:", endkey: `h:\u{10FFFF}` });
+    for (const xxd of xx.rows) {
+      const chunk = xxd.id;
+      localChunks.set(chunk, xxd.value.rev);
+    }
+    const remoteDB = ret.db;
+    const remoteChunks = /* @__PURE__ */ new Map();
+    const xxr = await remoteDB.allDocs({ startkey: "h:", endkey: `h:\u{10FFFF}` });
+    for (const xxd of xxr.rows) {
+      const chunk = xxd.id;
+      remoteChunks.set(chunk, xxd.value.rev);
+    }
+    const localToRemote = new Map([...localChunks]);
+    const remoteToLocal = new Map([...remoteChunks]);
+    for (const id of /* @__PURE__ */ new Set([...localChunks.keys(), ...remoteChunks.keys()])) {
+      if (remoteChunks.has(id)) {
+        localToRemote.delete(id);
+      }
+      if (localChunks.has(id)) {
+        remoteToLocal.delete(id);
+      }
+    }
+    function arrayToChunkedArray(src, size = 25) {
+      const ret2 = [];
+      let i = 0;
+      while (i < src.length) {
+        ret2.push(src.slice(i, i += size));
+      }
+      return ret2;
+    }
+    if (localToRemote.size == 0) {
+      Logger(`No chunks need to be sent`, LOG_LEVEL.NOTICE);
+    } else {
+      Logger(`${localToRemote.size} chunks need to be sent`, LOG_LEVEL.NOTICE);
+      if (!dryRun) {
+        const w = arrayToChunkedArray([...localToRemote]);
+        for (const chunk of w) {
+          for (const [id] of chunk) {
+            const queryRet = await localDB.allDocs({ keys: [id], include_docs: true });
+            const docs = queryRet.rows.filter((e2) => !("error" in e2)).map((x) => x.doc);
+            const ret2 = await remoteDB.bulkDocs(docs, { new_edits: false });
+            Logger(ret2, LOG_LEVEL.VERBOSE);
+          }
+        }
+        Logger(`Done! ${remoteToLocal.size} chunks have been sent`, LOG_LEVEL.NOTICE);
+      }
+    }
+    if (remoteToLocal.size == 0) {
+      Logger(`No chunks need to be retrieved`, LOG_LEVEL.NOTICE);
+    } else {
+      Logger(`${remoteToLocal.size} chunks need to be retrieved`, LOG_LEVEL.NOTICE);
+      if (!dryRun) {
+        const w = arrayToChunkedArray([...remoteToLocal]);
+        for (const chunk of w) {
+          for (const [id] of chunk) {
+            const queryRet = await remoteDB.allDocs({ keys: [id], include_docs: true });
+            const docs = queryRet.rows.filter((e2) => !("error" in e2)).map((x) => x.doc);
+            const ret2 = await localDB.bulkDocs(docs, { new_edits: false });
+            Logger(ret2, LOG_LEVEL.VERBOSE);
+          }
+        }
+        Logger(`Done! ${remoteToLocal.size} chunks have been retrieved`, LOG_LEVEL.NOTICE);
+      }
+    }
+  });
+};
+var remoteDatabaseCleanup = async (plugin2, dryRun) => {
+  const getSize = function(info2, key) {
+    var _a, _b;
+    return Number.parseInt((_b = (_a = info2 == null ? void 0 : info2.sizes) == null ? void 0 : _a[key]) != null ? _b : 0);
+  };
+  await runWithLock("clean-up:remote", true, async () => {
+    const CHUNK_SIZE = 100;
+    function makeChunkedArrayFromArray(items) {
+      const chunked = [];
+      for (let i = 0; i < items.length; i += CHUNK_SIZE) {
+        chunked.push(items.slice(i, i + CHUNK_SIZE));
+      }
+      return chunked;
+    }
+    try {
+      const ret = await plugin2.replicator.connectRemoteCouchDBWithSetting(plugin2.settings, plugin2.isMobile);
+      if (typeof ret === "string") {
+        Logger(`Connect error: ${ret}`, LOG_LEVEL.NOTICE, "clean-up-db");
+        return;
+      }
+      const info2 = ret.info;
+      Logger(JSON.stringify(info2), LOG_LEVEL.VERBOSE, "clean-up-db");
+      Logger(`Database active-size: ${sizeToHumanReadable(getSize(info2, "active"))}, external-size:${sizeToHumanReadable(getSize(info2, "external"))}, file-size: ${sizeToHumanReadable(getSize(info2, "file"))}`, LOG_LEVEL.NOTICE);
+      if (!dryRun) {
+        Logger(`The remote database has been locked for garbage collection`, LOG_LEVEL.NOTICE, "clean-up-db");
+        await plugin2.markRemoteLocked(true);
+      }
+      Logger(`Gathering chunk usage information`, LOG_LEVEL.NOTICE, "clean-up-db");
+      const db = ret.db;
+      const { unreferenced, missing } = await gatherChunkUsage(db);
+      if (missing.size != 0) {
+        Logger(`Some chunks are not found! We have to rescue`, LOG_LEVEL.NOTICE);
+        Logger(missing, LOG_LEVEL.VERBOSE);
+      } else {
+        Logger(`All chunks are OK`, LOG_LEVEL.NOTICE);
+      }
+      const payload = {};
+      for (const [id, rev2] of unreferenced) {
+        payload[id] = [rev2];
+      }
+      const removeItems = Object.keys(payload).length;
+      if (removeItems == 0) {
+        Logger(`No unreferenced chunk found (Remote)`, LOG_LEVEL.NOTICE);
+        return;
+      }
+      if (dryRun) {
+        Logger(`There are ${removeItems} unreferenced chunks (Remote)`, LOG_LEVEL.NOTICE);
+        return;
+      }
+      Logger(`Deleting unreferenced chunks: ${removeItems}`, LOG_LEVEL.NOTICE, "clean-up-db");
+      const buffer = makeChunkedArrayFromArray(Object.entries(payload));
+      for (const chunkedPayload of buffer) {
+        const rets = await _requestToCouchDBFetch(
+          `${plugin2.settings.couchDB_URI}/${plugin2.settings.couchDB_DBNAME}`,
+          plugin2.settings.couchDB_USER,
+          plugin2.settings.couchDB_PASSWORD,
+          "_purge",
+          chunkedPayload.reduce((p, c) => ({ ...p, [c[0]]: c[1] }), {}),
+          "POST"
+        );
+        Logger(JSON.stringify(await rets.json()), LOG_LEVEL.VERBOSE);
+      }
+      Logger(`Compacting database...`, LOG_LEVEL.NOTICE, "clean-up-db");
+      await db.compact();
+      const endInfo = await db.info();
+      Logger(`Processed database active-size: ${sizeToHumanReadable(getSize(endInfo, "active"))}, external-size:${sizeToHumanReadable(getSize(endInfo, "external"))}, file-size: ${sizeToHumanReadable(getSize(endInfo, "file"))}`, LOG_LEVEL.NOTICE);
+      Logger(`Reduced sizes: active-size: ${sizeToHumanReadable(getSize(info2, "active") - getSize(endInfo, "active"))}, external-size:${sizeToHumanReadable(getSize(info2, "external") - getSize(endInfo, "external"))}, file-size: ${sizeToHumanReadable(getSize(info2, "file") - getSize(endInfo, "file"))}`, LOG_LEVEL.NOTICE);
+      Logger(JSON.stringify(endInfo), LOG_LEVEL.VERBOSE, "clean-up-db");
+      Logger(`Local database cleaning up...`);
+      await localDatabaseCleanUp(plugin2, true, false);
+    } catch (ex) {
+      Logger("Failed to clean up db.");
+      Logger(ex, LOG_LEVEL.VERBOSE);
+    }
+  });
+};
+
+// src/ObsidianLiveSyncSettingTab.ts
 var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab {
   constructor(app2, plugin2) {
     super(app2, plugin2);
@@ -17247,7 +20109,7 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
     this.plugin = plugin2;
   }
   async testConnection() {
-    const db = await this.plugin.replicator.connectRemoteCouchDBWithSetting(this.plugin.settings, this.plugin.isMobile);
+    const db = await this.plugin.replicator.connectRemoteCouchDBWithSetting(this.plugin.settings, this.plugin.isMobile, true);
     if (typeof db === "string") {
       this.plugin.addLog(`could not connect to ${this.plugin.settings.couchDB_URI} : ${this.plugin.settings.couchDB_DBNAME} 
 (${db})`, LOG_LEVEL.NOTICE);
@@ -17275,16 +20137,13 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
     w.addClass("sls-setting-menu");
     w.innerHTML = `
 <label class='sls-setting-label c-100 wizardHidden'><input type='radio' name='disp' value='100' class='sls-setting-tab'><div class='sls-setting-menu-btn'>\u{1F4AC}</div></label>
-<label class='sls-setting-label c-110'><input type='radio' name='disp' value='110' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1FA84}</div></label>
-<label class='sls-setting-label c-0'><input type='radio' name='disp' value='0' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F6F0}\uFE0F</div></label>
-
-<label class='sls-setting-label c-10'><input type='radio' name='disp' value='10' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F4E6}</div></label>
+<label class='sls-setting-label c-110'><input type='radio' name='disp' value='110' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F9D9}\u200D\u2642\uFE0F</div></label>
 <label class='sls-setting-label c-20 wizardHidden'><input type='radio' name='disp' value='20' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u2699\uFE0F</div></label>
-<label class='sls-setting-label c-30 wizardHidden'><input type='radio' name='disp' value='30' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F501}</div></label>
-<label class='sls-setting-label c-40'><input type='radio' name='disp' value='40' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F527}</div></label>
-<label class='sls-setting-label c-50 wizardHidden'><input type='radio' name='disp' value='50' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F9F0}</div></label>
+<label class='sls-setting-label c-0'><input type='radio' name='disp' value='0' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F6F0}\uFE0F</div></label>
+<label class='sls-setting-label c-30'><input type='radio' name='disp' value='30' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F501}</div></label>
 <label class='sls-setting-label c-60 wizardHidden'><input type='radio' name='disp' value='60' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F50C}</div></label>
-<label class='sls-setting-label c-70 wizardHidden'><input type='radio' name='disp' value='70' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F691}</div></label>
+<label class='sls-setting-label c-50 wizardHidden'><input type='radio' name='disp' value='50' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F9F0}</div></label>
+<label class='sls-setting-label c-70 wizardHidden'><input type='radio' name='disp' value='70' class='sls-setting-tab' ><div class='sls-setting-menu-btn'>\u{1F39B}\uFE0F</div></label>
         `;
     const menuTabs = w.querySelectorAll(".sls-setting-label");
     const changeDisplay = (screen) => {
@@ -17318,8 +20177,8 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
     const containerInformationEl = containerEl.createDiv();
     const h3El = containerInformationEl.createEl("h3", { text: "Updates" });
     const informationDivEl = containerInformationEl.createEl("div", { text: "" });
-    const manifestVersion = "0.17.34";
-    const updateInformation = "### 0.17.0\n- 0.17.0 has no surfaced changes but the design of saving chunks has been changed. They have compatibility but changing files after upgrading makes different chunks than before 0.16.x.\n  Please rebuild databases once if you have been worried about storage usage.\n\n  - Improved:\n    - Splitting markdown\n    - Saving chunks\n\n  - Changed:\n    - Chunk ID numbering rules\n\n#### Minors\n- __0.17.1 to 0.17.30 has been moved into `update_old.md`__\n- 0.17.31\n  - Fixed:\n    - Now `redflag3` can be run surely.\n    - Synchronisation can now be aborted.\n  - Note: The synchronisation flow has been rewritten drastically. Please do not haste to inform me if you have noticed anything.\n- 0.17.32\n  - Fixed:\n    - Now periodic internal file scanning works well.\n    - The handler of Window-visibility-changed has been fixed.\n    - And minor fixes possibly included.\n  - Refactored:\n    - Unused logic has been removed.\n    - Some utility functions have been moved into suitable files.\n    - Function names have been renamed.\n- 0.17.33\n  - Maintenance update: Refactored; the responsibilities that `LocalDatabase` had were shared. (Hoping) No changes in behaviour.\n- 0.17.34\n  - Fixed: The `Fetch` that was broken at 0.17.33 has been fixed.\n  - Refactored again: Internal file sync, plug-in sync and Set up URI have been moved into each file.\n... To continue on to `updates_old.md`.";
+    const manifestVersion = "0.19.7";
+    const updateInformation = "### 0.19.0\n\n#### Customization sync\n\nSince `Plugin and their settings` have been broken, so I tried to fix it, not just fix it, but fix it the way it should be.\n\nNow, we have `Customization sync`.\n\nIt is a real shame that the compatibility between these features has been broken. However, this new feature is surely useful and I believe that worth getting over the pain.\nWe can use the new feature with the same configuration. Only the menu on the command palette has been changed. The dialog can be opened by `Show customization sync dialog`.\n\nI hope you will give it a try.\n\n\n#### Minors\n\n- 0.19.1\n  - Fixed: Fixed hidden file handling on Linux\n  - Improved: Now customization sync works more smoothly.\n- 0.19.2\n  - Fixed:\n    - Fixed garbage collection error while unreferenced chunks exist many.\n    - Fixed filename validation on Linux.\n  - Improved:\n    - Showing status is now thinned for performance.\n    - Enhance caching while collecting chunks.\n- 0.19.3\n  - Improved:\n    - Now replication will be paced by collecting chunks. If synchronisation has been deadlocked, please enable `Do not pace synchronization` once.\n- 0.19.4\n  - Improved:\n    - Reduced remote database checking to improve speed and reduce bandwidth.\n  - Fixed:\n    - Chunks which previously misinterpreted are now interpreted correctly.\n      - No more missing chunks which not be found forever, except if it has been actually missing.\n    - Deleted file detection on hidden file synchronising now works fine.\n    - Now the Customisation sync is surely quiet while it has been disabled.\n- 0.19.5\n  - Fixed:\n    - Now hidden file synchronisation would not be hanged, even if so many files exist.\n  - Improved:\n    - Customisation sync works more smoothly.\n  - Note: Concurrent processing has been rollbacked into the original implementation. As a result, the total number of processes is no longer shown next to the hourglass icon. However, only the processes that are running concurrently are shown.\n- 0.19.6\n  - Fixed:\n    - Logging has been tweaked.\n    - No more too many planes and rockets.\n    - The batch database update now surely only works in non-live mode.\n  - Internal things:\n    - Some frameworks has been upgraded.\n    - Import declaration has been fixed.\n  - Improved:\n    - The plug-in now asks to enable a new adaptor, when rebuilding, if it is not enabled yet.\n    - The setting dialogue refined.\n      - Configurations for compatibilities have been moved under the hatch.\n      - Made it clear that disabled is the default.\n      - Ambiguous names configuration have been renamed.\n      - Items that have no meaning in the settings are no longer displayed.\n      - Some items have been reordered for clarity.\n      - Each configuration has been grouped.\n- 0.19.7\n  - Fixed:\n    - The initial pane of Setting dialogue is now changed to General Settings.\n    - The Setup Wizard is now able to flush existing settings and get into the mode again.\n\n... To continue on to `updates_old.md`.\n";
     const lastVersion = ~~(versionNumberString2Number(manifestVersion) / 1e3);
     const tmpDiv = createSpan();
     tmpDiv.addClass("sls-header-button");
@@ -17357,7 +20216,7 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
     const setupWizardEl = containerEl.createDiv();
     setupWizardEl.createEl("h3", { text: "Setup wizard" });
     new import_obsidian.Setting(setupWizardEl).setName("Discard the existing configuration and set up").addButton((text2) => {
-      text2.setButtonText("Next").onClick(() => {
+      text2.setButtonText("Next").onClick(async () => {
         if (JSON.stringify(this.plugin.settings) != JSON.stringify(DEFAULT_SETTINGS)) {
           this.plugin.replicator.closeReplication();
           this.plugin.settings = { ...DEFAULT_SETTINGS };
@@ -17467,168 +20326,6 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
           await this.plugin.saveSettings();
         })
       )
-    );
-    const e2e = new import_obsidian.Setting(containerRemoteDatabaseEl).setName("End to End Encryption").setDesc("Encrypt contents on the remote database. If you use the plugin's synchronization feature, enabling this is recommend.").addToggle(
-      (toggle) => toggle.setValue(encrypt2).onChange(async (value) => {
-        if (inWizard) {
-          this.plugin.settings.encrypt = value;
-          passphraseSetting.setDisabled(!value);
-          dynamicIteration.setDisabled(!value);
-          await this.plugin.saveSettings();
-        } else {
-          encrypt2 = value;
-          passphraseSetting.setDisabled(!value);
-          dynamicIteration.setDisabled(!value);
-          await this.plugin.saveSettings();
-          markDirtyControl();
-        }
-      })
-    );
-    const markDirtyControl = () => {
-      passphraseSetting.controlEl.toggleClass("sls-item-dirty", passphrase != this.plugin.settings.passphrase);
-      e2e.controlEl.toggleClass("sls-item-dirty", encrypt2 != this.plugin.settings.encrypt);
-      dynamicIteration.controlEl.toggleClass("sls-item-dirty", useDynamicIterationCount != this.plugin.settings.useDynamicIterationCount);
-    };
-    const passphraseSetting = new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Passphrase").setDesc("Encrypting passphrase. If you change the passphrase of a existing database, overwriting the remote database is strongly recommended.").addText((text2) => {
-      text2.setPlaceholder("").setValue(passphrase).onChange(async (value) => {
-        if (inWizard) {
-          this.plugin.settings.passphrase = value;
-          await this.plugin.saveSettings();
-        } else {
-          passphrase = value;
-          await this.plugin.saveSettings();
-          markDirtyControl();
-        }
-      });
-      text2.inputEl.setAttribute("type", "password");
-    });
-    passphraseSetting.setDisabled(!encrypt2);
-    const dynamicIteration = new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Use dynamic iteration count (experimental)").setDesc("Balancing the encryption/decryption load against the length of the passphrase if toggled. (v0.17.5 or higher required)").addToggle((toggle) => {
-      toggle.setValue(useDynamicIterationCount).onChange(async (value) => {
-        if (inWizard) {
-          this.plugin.settings.useDynamicIterationCount = value;
-          await this.plugin.saveSettings();
-        } else {
-          useDynamicIterationCount = value;
-          await this.plugin.saveSettings();
-          markDirtyControl();
-        }
-      });
-    }).setClass("wizardHidden");
-    dynamicIteration.setDisabled(!encrypt2);
-    const checkWorkingPassphrase = async () => {
-      const settingForCheck = {
-        ...this.plugin.settings,
-        encrypt: encrypt2,
-        passphrase,
-        useDynamicIterationCount
-      };
-      console.dir(settingForCheck);
-      const db = await this.plugin.replicator.connectRemoteCouchDBWithSetting(settingForCheck, this.plugin.isMobile);
-      if (typeof db === "string") {
-        Logger("Could not connect to the database.", LOG_LEVEL.NOTICE);
-        return false;
-      } else {
-        if (await checkSyncInfo(db.db)) {
-          return true;
-        } else {
-          Logger("Failed to read remote database", LOG_LEVEL.NOTICE);
-          return false;
-        }
-      }
-    };
-    const applyEncryption = async (sendToServer) => {
-      if (encrypt2 && passphrase == "") {
-        Logger("If you enable encryption, you have to set the passphrase", LOG_LEVEL.NOTICE);
-        return;
-      }
-      if (encrypt2 && !await testCrypt()) {
-        Logger("WARNING! Your device would not support encryption.", LOG_LEVEL.NOTICE);
-        return;
-      }
-      if (!await checkWorkingPassphrase() && !sendToServer) {
-        return;
-      }
-      if (!encrypt2) {
-        passphrase = "";
-      }
-      this.plugin.settings.liveSync = false;
-      this.plugin.settings.periodicReplication = false;
-      this.plugin.settings.syncOnSave = false;
-      this.plugin.settings.syncOnStart = false;
-      this.plugin.settings.syncOnFileOpen = false;
-      this.plugin.settings.syncAfterMerge = false;
-      this.plugin.settings.encrypt = encrypt2;
-      this.plugin.settings.passphrase = passphrase;
-      this.plugin.settings.useDynamicIterationCount = useDynamicIterationCount;
-      await this.plugin.saveSettings();
-      markDirtyControl();
-      if (sendToServer) {
-        await this.plugin.initializeDatabase(true);
-        await this.plugin.markRemoteLocked();
-        await this.plugin.tryResetRemoteDatabase();
-        await this.plugin.markRemoteLocked();
-        await this.plugin.replicateAllToServer(true);
-      } else {
-        await this.plugin.markRemoteResolved();
-        await this.plugin.replicate(true);
-      }
-    };
-    new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Apply").setDesc("Apply encryption settings").setClass("wizardHidden").addButton(
-      (button) => button.setButtonText("Apply").setWarning().setDisabled(false).onClick(async () => {
-        await applyEncryption(true);
-      })
-    ).addButton(
-      (button) => button.setButtonText("Apply w/o rebuilding").setWarning().setDisabled(false).onClick(async () => {
-        await applyEncryption(false);
-      })
-    );
-    const rebuildDB = async (method) => {
-      this.plugin.settings.liveSync = false;
-      this.plugin.settings.periodicReplication = false;
-      this.plugin.settings.syncOnSave = false;
-      this.plugin.settings.syncOnStart = false;
-      this.plugin.settings.syncOnFileOpen = false;
-      this.plugin.settings.syncAfterMerge = false;
-      this.plugin.settings.syncInternalFiles = false;
-      this.plugin.settings.usePluginSync = false;
-      Logger("Hidden files and plugin synchronization have been temporarily disabled. Please enable them after the fetching, if you need them.", LOG_LEVEL.NOTICE);
-      await this.plugin.saveSettings();
-      applyDisplayEnabled();
-      await delay(2e3);
-      if (method == "localOnly") {
-        await this.plugin.resetLocalDatabase();
-        await delay(1e3);
-        await this.plugin.markRemoteResolved();
-        await this.plugin.openDatabase();
-        this.plugin.isReady = true;
-        await this.plugin.replicateAllFromServer(true);
-      }
-      if (method == "remoteOnly") {
-        await this.plugin.markRemoteLocked();
-        await this.plugin.tryResetRemoteDatabase();
-        await this.plugin.markRemoteLocked();
-        await this.plugin.replicateAllToServer(true);
-      }
-      if (method == "rebuildBothByThisDevice") {
-        await this.plugin.resetLocalDatabase();
-        await delay(1e3);
-        await this.plugin.initializeDatabase(true);
-        await this.plugin.markRemoteLocked();
-        await this.plugin.tryResetRemoteDatabase();
-        await this.plugin.markRemoteLocked();
-        await this.plugin.replicateAllToServer(true);
-      }
-    };
-    new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Overwrite remote database").setDesc("Overwrite remote database with local DB and passphrase.").setClass("wizardHidden").addButton(
-      (button) => button.setButtonText("Send").setWarning().setDisabled(false).onClick(async () => {
-        await rebuildDB("remoteOnly");
-      })
-    );
-    new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Rebuild everything").setDesc("Rebuild local and remote database with local files.").setClass("wizardHidden").addButton(
-      (button) => button.setButtonText("Rebuild").setWarning().setDisabled(false).onClick(async () => {
-        await rebuildDB("rebuildBothByThisDevice");
-      })
     );
     new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Test Database Connection").setDesc("Open database connection. If the remote database is not found and you have the privilege to create a database, the database will be created.").addButton(
       (button) => button.setButtonText("Test").setDisabled(false).onClick(async () => {
@@ -17778,11 +20475,170 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
     const checkResultDiv = containerRemoteDatabaseEl.createEl("div", {
       text: ""
     });
-    new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Lock remote database").setDesc("Lock remote database to prevent synchronization with other devices.").setClass("wizardHidden").addButton(
-      (button) => button.setButtonText("Lock").setDisabled(false).setWarning().onClick(async () => {
-        await this.plugin.markRemoteLocked();
+    containerRemoteDatabaseEl.createEl("h4", { text: "Confidentiality" });
+    const e2e = new import_obsidian.Setting(containerRemoteDatabaseEl).setName("End to End Encryption").setDesc("Encrypt contents on the remote database. If you use the plugin's synchronization feature, enabling this is recommend.").addToggle(
+      (toggle) => toggle.setValue(encrypt2).onChange(async (value) => {
+        if (inWizard) {
+          this.plugin.settings.encrypt = value;
+          encrypt2 = value;
+          await this.plugin.saveSettings();
+          updateE2EControls();
+        } else {
+          encrypt2 = value;
+          updateE2EControls();
+        }
       })
     );
+    let usePathObfuscation = this.plugin.settings.usePathObfuscation;
+    const updateE2EControls = () => {
+      e2e.controlEl.toggleClass("sls-item-dirty", encrypt2 != this.plugin.settings.encrypt);
+      if (encrypt2) {
+        passphraseSetting.settingEl.removeClass("sls-setting-hidden");
+        dynamicIteration.settingEl.removeClass("sls-setting-hidden");
+        usePathObfuscationEl.settingEl.removeClass("sls-setting-hidden");
+        passphraseSetting == null ? void 0 : passphraseSetting.controlEl.toggleClass("sls-item-dirty", passphrase != this.plugin.settings.passphrase);
+        dynamicIteration == null ? void 0 : dynamicIteration.controlEl.toggleClass("sls-item-dirty", useDynamicIterationCount != this.plugin.settings.useDynamicIterationCount);
+        usePathObfuscationEl == null ? void 0 : usePathObfuscationEl.controlEl.toggleClass("sls-item-dirty", usePathObfuscation != this.plugin.settings.usePathObfuscation);
+        if (encrypt2 != this.plugin.settings.encrypt || passphrase != this.plugin.settings.passphrase || useDynamicIterationCount != this.plugin.settings.useDynamicIterationCount || usePathObfuscation != this.plugin.settings.usePathObfuscation) {
+          applyE2EButtons.settingEl.removeClass("sls-setting-hidden");
+        } else {
+          applyE2EButtons.settingEl.addClass("sls-setting-hidden");
+        }
+      } else {
+        passphraseSetting.settingEl.addClass("sls-setting-hidden");
+        dynamicIteration.settingEl.addClass("sls-setting-hidden");
+        usePathObfuscationEl.settingEl.addClass("sls-setting-hidden");
+        applyE2EButtons.settingEl.addClass("sls-setting-hidden");
+      }
+    };
+    const passphraseSetting = new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Passphrase").setDesc("Encrypting passphrase. If you change the passphrase of a existing database, overwriting the remote database is strongly recommended.").addText((text2) => {
+      text2.setPlaceholder("").setValue(passphrase).onChange(async (value) => {
+        if (inWizard) {
+          this.plugin.settings.passphrase = value;
+          await this.plugin.saveSettings();
+        } else {
+          passphrase = value;
+          await this.plugin.saveSettings();
+          updateE2EControls();
+        }
+      });
+      text2.inputEl.setAttribute("type", "password");
+    });
+    const usePathObfuscationEl = new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Path Obfuscation").setDesc("Obfuscate paths of files. If we configured, we should rebuild the database.").addToggle(
+      (toggle) => toggle.setValue(usePathObfuscation).onChange(async (value) => {
+        if (inWizard) {
+          this.plugin.settings.usePathObfuscation = value;
+          await this.plugin.saveSettings();
+        } else {
+          usePathObfuscation = value;
+          await this.plugin.saveSettings();
+          updateE2EControls();
+        }
+      })
+    );
+    const dynamicIteration = new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Use dynamic iteration count (experimental)").setDesc("Balancing the encryption/decryption load against the length of the passphrase if toggled.").addToggle((toggle) => {
+      toggle.setValue(useDynamicIterationCount).onChange(async (value) => {
+        if (inWizard) {
+          this.plugin.settings.useDynamicIterationCount = value;
+          await this.plugin.saveSettings();
+        } else {
+          useDynamicIterationCount = value;
+          await this.plugin.saveSettings();
+          updateE2EControls();
+        }
+      });
+    }).setClass("wizardHidden");
+    const applyE2EButtons = new import_obsidian.Setting(containerRemoteDatabaseEl).setName("Apply").setDesc("Apply encryption settings").setClass("wizardHidden").addButton(
+      (button) => button.setButtonText("Just apply").setWarning().setDisabled(false).onClick(async () => {
+        await applyEncryption(false);
+      })
+    ).addButton(
+      (button) => button.setButtonText("Apply and Fetch").setWarning().setDisabled(false).onClick(async () => {
+        await rebuildDB("localOnly");
+      })
+    ).addButton(
+      (button) => button.setButtonText("Apply and Rebuild").setWarning().setDisabled(false).onClick(async () => {
+        await rebuildDB("rebuildBothByThisDevice");
+      })
+    );
+    updateE2EControls();
+    const checkWorkingPassphrase = async () => {
+      const settingForCheck = {
+        ...this.plugin.settings,
+        encrypt: encrypt2,
+        passphrase,
+        useDynamicIterationCount
+      };
+      console.dir(settingForCheck);
+      const db = await this.plugin.replicator.connectRemoteCouchDBWithSetting(settingForCheck, this.plugin.isMobile, true);
+      if (typeof db === "string") {
+        Logger("Could not connect to the database.", LOG_LEVEL.NOTICE);
+        return false;
+      } else {
+        if (await checkSyncInfo(db.db)) {
+          return true;
+        } else {
+          Logger("Failed to read remote database", LOG_LEVEL.NOTICE);
+          return false;
+        }
+      }
+    };
+    const applyEncryption = async (sendToServer) => {
+      if (encrypt2 && passphrase == "") {
+        Logger("If you enable encryption, you have to set the passphrase", LOG_LEVEL.NOTICE);
+        return;
+      }
+      if (encrypt2 && !await testCrypt()) {
+        Logger("WARNING! Your device would not support encryption.", LOG_LEVEL.NOTICE);
+        return;
+      }
+      if (!await checkWorkingPassphrase() && !sendToServer) {
+        return;
+      }
+      if (!encrypt2) {
+        passphrase = "";
+      }
+      this.plugin.addOnSetup.suspendAllSync();
+      this.plugin.addOnSetup.suspendExtraSync();
+      this.plugin.settings.encrypt = encrypt2;
+      this.plugin.settings.passphrase = passphrase;
+      this.plugin.settings.useDynamicIterationCount = useDynamicIterationCount;
+      this.plugin.settings.usePathObfuscation = usePathObfuscation;
+      await this.plugin.saveSettings();
+      updateE2EControls();
+      if (sendToServer) {
+        await this.plugin.addOnSetup.rebuildRemote();
+      } else {
+        await this.plugin.markRemoteResolved();
+        await this.plugin.replicate(true);
+      }
+    };
+    const rebuildDB = async (method) => {
+      if (encrypt2 && passphrase == "") {
+        Logger("If you enable encryption, you have to set the passphrase", LOG_LEVEL.NOTICE);
+        return;
+      }
+      if (encrypt2 && !await testCrypt()) {
+        Logger("WARNING! Your device would not support encryption.", LOG_LEVEL.NOTICE);
+        return;
+      }
+      if (!encrypt2) {
+        passphrase = "";
+      }
+      this.plugin.addOnSetup.suspendAllSync();
+      this.plugin.addOnSetup.suspendExtraSync();
+      this.plugin.settings.encrypt = encrypt2;
+      this.plugin.settings.passphrase = passphrase;
+      this.plugin.settings.useDynamicIterationCount = useDynamicIterationCount;
+      this.plugin.settings.usePathObfuscation = usePathObfuscation;
+      Logger("All synchronization have been temporarily disabled. Please enable them after the fetching, if you need them.", LOG_LEVEL.NOTICE);
+      await this.plugin.saveSettings();
+      updateE2EControls();
+      applyDisplayEnabled();
+      this.plugin.app.setting.close();
+      await delay(2e3);
+      await performRebuildDB(this.plugin, method);
+    };
     let rebuildRemote = false;
     new import_obsidian.Setting(containerRemoteDatabaseEl).setName("").setClass("wizardOnly").addButton(
       (button) => button.setButtonText("Next").setClass("mod-cta").setDisabled(false).onClick(() => {
@@ -17795,11 +20651,11 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
           this.plugin.settings.customChunkSize = 100;
         }
         rebuildRemote = false;
-        changeDisplay("10");
+        changeDisplay("30");
       })
     );
     new import_obsidian.Setting(containerRemoteDatabaseEl).setName("").setClass("wizardOnly").addButton(
-      (button) => button.setButtonText("Discard exist database and proceed").setDisabled(false).setWarning().onClick(() => {
+      (button) => button.setButtonText("Discard existing database and proceed").setDisabled(false).setWarning().onClick(() => {
         if (!this.plugin.settings.encrypt) {
           this.plugin.settings.passphrase = "";
         }
@@ -17809,105 +20665,86 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
           this.plugin.settings.customChunkSize = 100;
         }
         rebuildRemote = true;
-        changeDisplay("10");
+        changeDisplay("30");
       })
     );
     addScreenElement("0", containerRemoteDatabaseEl);
-    const containerLocalDatabaseEl = containerEl.createDiv();
-    containerLocalDatabaseEl.createEl("h3", { text: "Local Database configuration" });
-    new import_obsidian.Setting(containerLocalDatabaseEl).setName("Batch database update").setDesc("Delay all changes, save once before replication or opening another file.").setClass("wizardHidden").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.batchSave).onChange(async (value) => {
-        if (value && this.plugin.settings.liveSync) {
-          Logger("LiveSync and Batch database update cannot be used at the same time.", LOG_LEVEL.NOTICE);
-          toggle.setValue(false);
-          return;
-        }
-        this.plugin.settings.batchSave = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerLocalDatabaseEl).setName("Fetch rebuilt DB").setDesc("Restore or reconstruct local database from remote database.").setClass("wizardHidden").addButton(
-      (button) => button.setButtonText("Fetch").setWarning().setDisabled(false).onClick(async () => {
-        await rebuildDB("localOnly");
-      })
-    );
-    let newDatabaseName = this.plugin.settings.additionalSuffixOfDatabaseName + "";
-    new import_obsidian.Setting(containerLocalDatabaseEl).setName("Database suffix").setDesc("Optional: Set unique name for using same vault name on different directory.").addText((text2) => {
-      text2.setPlaceholder("").setValue(newDatabaseName).onChange((value) => {
-        newDatabaseName = value;
-      });
-    }).addButton((button) => {
-      button.setButtonText("Change").onClick(async () => {
-        if (this.plugin.settings.additionalSuffixOfDatabaseName == newDatabaseName) {
-          Logger("Suffix was not changed.", LOG_LEVEL.NOTICE);
-          return;
-        }
-        this.plugin.settings.additionalSuffixOfDatabaseName = newDatabaseName;
-        await this.plugin.saveSettings();
-        Logger("Suffix has been changed. Reopening database...", LOG_LEVEL.NOTICE);
-        await this.plugin.initializeDatabase();
-      });
-    });
-    new import_obsidian.Setting(containerLocalDatabaseEl).setName("").setClass("wizardOnly").addButton(
-      (button) => button.setButtonText("Next").setDisabled(false).onClick(() => {
-        changeDisplay("40");
-      })
-    );
-    containerLocalDatabaseEl.createEl("h3", {
-      text: (0, import_obsidian.sanitizeHTMLToDom)(`Experimental`),
-      cls: "wizardHidden"
-    });
-    new import_obsidian.Setting(containerLocalDatabaseEl).setName("Use new adapter").setDesc("This option is not compatible with a database made by older versions. Changing this configuration will fetch the remote database again.").setClass("wizardHidden").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.useIndexedDBAdapter).onChange(async (value) => {
-        this.plugin.settings.useIndexedDBAdapter = value;
-        await this.plugin.saveSettings();
-        await rebuildDB("localOnly");
-      })
-    );
-    addScreenElement("10", containerLocalDatabaseEl);
     const containerGeneralSettingsEl = containerEl.createDiv();
     containerGeneralSettingsEl.createEl("h3", { text: "General Settings" });
-    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Do not show low-priority Log").setDesc("Reduce log information").addToggle(
+    containerGeneralSettingsEl.createEl("h4", { text: "Appearance" });
+    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Show status inside the editor").setDesc("").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.showStatusOnEditor).onChange(async (value) => {
+        this.plugin.settings.showStatusOnEditor = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    containerGeneralSettingsEl.createEl("h4", { text: "Logging" });
+    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Show only notifications").setDesc("Prevent logging and show only notification").addToggle(
       (toggle) => toggle.setValue(this.plugin.settings.lessInformationInLog).onChange(async (value) => {
         this.plugin.settings.lessInformationInLog = value;
         await this.plugin.saveSettings();
+        this.display();
       })
     );
-    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Verbose Log").setDesc("Show verbose log").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.showVerboseLog).onChange(async (value) => {
-        this.plugin.settings.showVerboseLog = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Delete metadata of deleted files.").setClass("wizardHidden").addToggle(
-      (toggle) => {
-        toggle.setValue(this.plugin.settings.deleteMetadataOfDeletedFiles).onChange(async (value) => {
-          this.plugin.settings.deleteMetadataOfDeletedFiles = value;
+    if (!this.plugin.settings.lessInformationInLog) {
+      new import_obsidian.Setting(containerGeneralSettingsEl).setName("Verbose Log").setDesc("Show verbose log").addToggle(
+        (toggle) => toggle.setValue(this.plugin.settings.showVerboseLog).onChange(async (value) => {
+          this.plugin.settings.showVerboseLog = value;
           await this.plugin.saveSettings();
-        });
-      }
-    );
-    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Delete old metadata of deleted files on start-up").setClass("wizardHidden").setDesc("(Days passed, 0 to disable automatic-deletion)").addText((text2) => {
-      text2.setPlaceholder("").setValue(this.plugin.settings.automaticallyDeleteMetadataOfDeletedFiles + "").onChange(async (value) => {
+        })
+      );
+    }
+    containerGeneralSettingsEl.createEl("h4", { text: "Performance tweaks" });
+    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Memory cache size (by total items)").setDesc("").addText((text2) => {
+      text2.setPlaceholder("").setValue(this.plugin.settings.hashCacheMaxCount + "").onChange(async (value) => {
         let v = Number(value);
-        if (isNaN(v)) {
-          v = 0;
+        if (isNaN(v) || v < 10) {
+          v = 10;
         }
-        this.plugin.settings.automaticallyDeleteMetadataOfDeletedFiles = v;
+        this.plugin.settings.hashCacheMaxCount = v;
         await this.plugin.saveSettings();
       });
       text2.inputEl.setAttribute("type", "number");
     });
-    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Monitor changes to hidden files and plugin").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.watchInternalFileChanges).onChange(async (value) => {
-        this.plugin.settings.watchInternalFileChanges = value;
+    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Memory cache size (by total characters)").setDesc("(Mega chars)").addText((text2) => {
+      text2.setPlaceholder("").setValue(this.plugin.settings.hashCacheMaxAmount + "").onChange(async (value) => {
+        let v = Number(value);
+        if (isNaN(v) || v < 1) {
+          v = 1;
+        }
+        this.plugin.settings.hashCacheMaxAmount = v;
+        await this.plugin.saveSettings();
+      });
+      text2.inputEl.setAttribute("type", "number");
+    });
+    containerGeneralSettingsEl.createEl("h4", { text: "Advanced Confidentiality" });
+    const passphrase_options = {
+      "": "Default",
+      LOCALSTORAGE: "Use a custom passphrase",
+      ASK_AT_LAUNCH: "Ask an passphrase at every launch"
+    };
+    new import_obsidian.Setting(containerGeneralSettingsEl).setName("Encrypting sensitive configuration items").addDropdown(
+      (dropdown) => dropdown.addOptions(passphrase_options).setValue(this.plugin.settings.configPassphraseStore).onChange(async (value) => {
+        this.plugin.settings.configPassphraseStore = value;
+        this.plugin.usedPassphrase = "";
+        confPassphraseSetting.setDisabled(this.plugin.settings.configPassphraseStore != "LOCALSTORAGE");
         await this.plugin.saveSettings();
       })
-    );
+    ).setClass("wizardHidden");
+    const confPassphrase = localStorage.getItem("ls-setting-passphrase") || "";
+    const confPassphraseSetting = new import_obsidian.Setting(containerGeneralSettingsEl).setName("Passphrase of sensitive configuration items").setDesc("This passphrase will not be copied to another device. It will be set to `Default` until you configure it again.").addText((text2) => {
+      text2.setPlaceholder("").setValue(confPassphrase).onChange(async (value) => {
+        this.plugin.usedPassphrase = "";
+        localStorage.setItem("ls-setting-passphrase", value);
+        await this.plugin.saveSettings();
+        updateE2EControls();
+      });
+      text2.inputEl.setAttribute("type", "password");
+    }).setClass("wizardHidden");
+    confPassphraseSetting.setDisabled(this.plugin.settings.configPassphraseStore != "LOCALSTORAGE");
     addScreenElement("20", containerGeneralSettingsEl);
     const containerSyncSettingEl = containerEl.createDiv();
     containerSyncSettingEl.createEl("h3", { text: "Sync Settings" });
-    containerSyncSettingEl.addClass("wizardHidden");
     if (this.plugin.settings.versionUpFlash != "") {
       const c = containerSyncSettingEl.createEl("div", { text: this.plugin.settings.versionUpFlash });
       c.createEl("button", { text: "I got it and updated." }, (e2) => {
@@ -17921,324 +20758,13 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
       });
       c.addClass("op-warn");
     }
-    const syncLive = [];
-    const syncNonLive = [];
-    syncLive.push(
-      new import_obsidian.Setting(containerSyncSettingEl).setName("LiveSync").setDesc("Sync realtime").addToggle(
-        (toggle) => toggle.setValue(this.plugin.settings.liveSync).onChange(async (value) => {
-          if (value && this.plugin.settings.batchSave) {
-            Logger("LiveSync and Batch database update cannot be used at the same time.", LOG_LEVEL.NOTICE);
-            toggle.setValue(false);
-            return;
-          }
-          this.plugin.settings.liveSync = value;
-          await this.plugin.saveSettings();
-          applyDisplayEnabled();
-          await this.plugin.realizeSettingSyncMode();
-        })
-      )
-    );
-    syncNonLive.push(
-      new import_obsidian.Setting(containerSyncSettingEl).setName("Periodic Sync").setDesc("Sync periodically").addToggle(
-        (toggle) => toggle.setValue(this.plugin.settings.periodicReplication).onChange(async (value) => {
-          this.plugin.settings.periodicReplication = value;
-          await this.plugin.saveSettings();
-          applyDisplayEnabled();
-        })
-      ),
-      new import_obsidian.Setting(containerSyncSettingEl).setName("Periodic Sync interval").setDesc("Interval (sec)").addText((text2) => {
-        text2.setPlaceholder("").setValue(this.plugin.settings.periodicReplicationInterval + "").onChange(async (value) => {
-          let v = Number(value);
-          if (isNaN(v) || v > 5e3) {
-            v = 0;
-          }
-          this.plugin.settings.periodicReplicationInterval = v;
-          await this.plugin.saveSettings();
-          applyDisplayEnabled();
-        });
-        text2.inputEl.setAttribute("type", "number");
-      }),
-      new import_obsidian.Setting(containerSyncSettingEl).setName("Sync on Save").setDesc("When you save file, sync automatically").addToggle(
-        (toggle) => toggle.setValue(this.plugin.settings.syncOnSave).onChange(async (value) => {
-          this.plugin.settings.syncOnSave = value;
-          await this.plugin.saveSettings();
-          applyDisplayEnabled();
-        })
-      ),
-      new import_obsidian.Setting(containerSyncSettingEl).setName("Sync on File Open").setDesc("When you open file, sync automatically").addToggle(
-        (toggle) => toggle.setValue(this.plugin.settings.syncOnFileOpen).onChange(async (value) => {
-          this.plugin.settings.syncOnFileOpen = value;
-          await this.plugin.saveSettings();
-          applyDisplayEnabled();
-        })
-      ),
-      new import_obsidian.Setting(containerSyncSettingEl).setName("Sync on Start").setDesc("Start synchronization after launching Obsidian.").addToggle(
-        (toggle) => toggle.setValue(this.plugin.settings.syncOnStart).onChange(async (value) => {
-          this.plugin.settings.syncOnStart = value;
-          await this.plugin.saveSettings();
-          applyDisplayEnabled();
-        })
-      ),
-      new import_obsidian.Setting(containerSyncSettingEl).setName("Sync after merging file").setDesc("Sync automatically after merging files").addToggle(
-        (toggle) => toggle.setValue(this.plugin.settings.syncAfterMerge).onChange(async (value) => {
-          this.plugin.settings.syncAfterMerge = value;
-          await this.plugin.saveSettings();
-          applyDisplayEnabled();
-        })
-      )
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Use Trash for deleted files").setDesc("Do not delete files that are deleted in remote, just move to trash.").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.trashInsteadDelete).onChange(async (value) => {
-        this.plugin.settings.trashInsteadDelete = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Do not delete empty folder").setDesc("Normally, a folder is deleted when it becomes empty after a replication. Enabling this will prevent it from getting deleted").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.doNotDeleteFolder).onChange(async (value) => {
-        this.plugin.settings.doNotDeleteFolder = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Use newer file if conflicted (beta)").setDesc("Resolve conflicts by newer files automatically.").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.resolveConflictsByNewerFile).onChange(async (value) => {
-        this.plugin.settings.resolveConflictsByNewerFile = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Check conflict only on opened files").setDesc("Do not check conflict for replication").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.checkConflictOnlyOnOpen).onChange(async (value) => {
-        this.plugin.settings.checkConflictOnlyOnOpen = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Disable sensible auto merging on markdown files").setDesc("If this switch is turned on, a merge dialog will be displayed, even if the sensible-merge is possible automatically. (Turn on to previous behavior)").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.disableMarkdownAutoMerge).onChange(async (value) => {
-        this.plugin.settings.disableMarkdownAutoMerge = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Write documents after synchronization even if they have conflict").setDesc("Turn on to previous behavior").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.writeDocumentsIfConflicted).onChange(async (value) => {
-        this.plugin.settings.writeDocumentsIfConflicted = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Sync hidden files").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.syncInternalFiles).onChange(async (value) => {
-        this.plugin.settings.syncInternalFiles = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Scan for hidden files before replication").setDesc("This configuration will be ignored if monitoring changes is enabled.").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.syncInternalFilesBeforeReplication).onChange(async (value) => {
-        this.plugin.settings.syncInternalFilesBeforeReplication = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Scan hidden files periodically").setDesc("Seconds, 0 to disable. This configuration will be ignored if monitoring changes is enabled.").addText((text2) => {
-      text2.setPlaceholder("").setValue(this.plugin.settings.syncInternalFilesInterval + "").onChange(async (value) => {
-        let v = Number(value);
-        if (isNaN(v) || v < 10) {
-          v = 10;
-        }
-        this.plugin.settings.syncInternalFilesInterval = v;
-        await this.plugin.saveSettings();
-      });
-      text2.inputEl.setAttribute("type", "number");
-    });
-    let skipPatternTextArea = null;
-    const defaultSkipPattern = "\\/node_modules\\/, \\/\\.git\\/, \\/obsidian-livesync\\/";
-    const defaultSkipPatternXPlat = defaultSkipPattern + ",\\/workspace$ ,\\/workspace.json$";
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Skip patterns").setDesc(
-      "Regular expression, If you use hidden file sync between desktop and mobile, adding `workspace$` is recommended."
-    ).addTextArea(
-      (text2) => {
-        text2.setValue(this.plugin.settings.syncInternalFilesIgnorePatterns).setPlaceholder("\\/node_modules\\/, \\/\\.git\\/").onChange(async (value) => {
-          this.plugin.settings.syncInternalFilesIgnorePatterns = value;
-          await this.plugin.saveSettings();
-        });
-        skipPatternTextArea = text2;
-        return text2;
-      }
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Restore the skip pattern to default").addButton((button) => {
-      button.setButtonText("Default").onClick(async () => {
-        skipPatternTextArea.setValue(defaultSkipPattern);
-        this.plugin.settings.syncInternalFilesIgnorePatterns = defaultSkipPattern;
-        await this.plugin.saveSettings();
-      });
-    }).addButton((button) => {
-      button.setButtonText("Cross-platform").onClick(async () => {
-        skipPatternTextArea.setValue(defaultSkipPatternXPlat);
-        this.plugin.settings.syncInternalFilesIgnorePatterns = defaultSkipPatternXPlat;
-        await this.plugin.saveSettings();
-      });
-    });
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Touch hidden files").setDesc("Update the modified time of all hidden files to the current time.").addButton(
-      (button) => button.setButtonText("Touch").setWarning().setDisabled(false).onClick(async () => {
-        const filesAll = await this.plugin.addOnHiddenFileSync.scanInternalFiles();
-        const targetFiles = await this.plugin.filterTargetFiles(filesAll);
-        const now = Date.now();
-        const newFiles = targetFiles.map((e2) => ({ ...e2, mtime: now }));
-        let i = 0;
-        const maxFiles = newFiles.length;
-        for (const file of newFiles) {
-          i++;
-          Logger(`Touched:${file.path} (${i}/${maxFiles})`, LOG_LEVEL.NOTICE, "touch-files");
-          await this.plugin.applyMTimeToFile(file);
-        }
-      })
-    );
-    containerSyncSettingEl.createEl("h3", {
-      text: (0, import_obsidian.sanitizeHTMLToDom)(`Experimental`)
-    });
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Regular expression to ignore files").setDesc("If this is set, any changes to local and remote files that match this will be skipped.").addTextArea(
-      (text2) => {
-        text2.setValue(this.plugin.settings.syncIgnoreRegEx).setPlaceholder("\\.pdf$").onChange(async (value) => {
-          let isValidRegExp = false;
-          try {
-            new RegExp(value);
-            isValidRegExp = true;
-          } catch (_) {
-          }
-          if (isValidRegExp || value.trim() == "") {
-            this.plugin.settings.syncIgnoreRegEx = value;
-            await this.plugin.saveSettings();
-          }
-        });
-        return text2;
-      }
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Regular expression for restricting synchronization targets").setDesc("If this is set, changes to local and remote files that only match this will be processed.").addTextArea(
-      (text2) => {
-        text2.setValue(this.plugin.settings.syncOnlyRegEx).setPlaceholder("\\.md$|\\.txt").onChange(async (value) => {
-          let isValidRegExp = false;
-          try {
-            new RegExp(value);
-            isValidRegExp = true;
-          } catch (_) {
-          }
-          if (isValidRegExp || value.trim() == "") {
-            this.plugin.settings.syncOnlyRegEx = value;
-            await this.plugin.saveSettings();
-          }
-        });
-        return text2;
-      }
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Chunk size").setDesc("Customize chunk size for binary files (0.1MBytes). This cannot be increased when using IBM Cloudant.").addText((text2) => {
-      text2.setPlaceholder("").setValue(this.plugin.settings.customChunkSize + "").onChange(async (value) => {
-        let v = Number(value);
-        if (isNaN(v) || v < 1) {
-          v = 1;
-        }
-        this.plugin.settings.customChunkSize = v;
-        await this.plugin.saveSettings();
-      });
-      text2.inputEl.setAttribute("type", "number");
-    });
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Read chunks online.").setDesc("If this option is enabled, LiveSync reads chunks online directly instead of replicating them locally. Increasing Custom chunk size is recommended.").addToggle(
-      (toggle) => {
-        toggle.setValue(this.plugin.settings.readChunksOnline).onChange(async (value) => {
-          this.plugin.settings.readChunksOnline = value;
-          await this.plugin.saveSettings();
-        });
-        return toggle;
-      }
-    );
-    containerSyncSettingEl.createEl("h3", {
-      text: (0, import_obsidian.sanitizeHTMLToDom)(`Advanced settings`)
-    });
-    containerSyncSettingEl.createEl("div", {
-      text: `If you reached the payload size limit when using IBM Cloudant, please decrease batch size and batch limit to a lower value.`
-    });
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Batch size").setDesc("Number of change feed items to process at a time. Defaults to 250.").addText((text2) => {
-      text2.setPlaceholder("").setValue(this.plugin.settings.batch_size + "").onChange(async (value) => {
-        let v = Number(value);
-        if (isNaN(v) || v < 10) {
-          v = 10;
-        }
-        this.plugin.settings.batch_size = v;
-        await this.plugin.saveSettings();
-      });
-      text2.inputEl.setAttribute("type", "number");
-    });
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Batch limit").setDesc("Number of batches to process at a time. Defaults to 40. This along with batch size controls how many docs are kept in memory at a time.").addText((text2) => {
-      text2.setPlaceholder("").setValue(this.plugin.settings.batches_limit + "").onChange(async (value) => {
-        let v = Number(value);
-        if (isNaN(v) || v < 10) {
-          v = 10;
-        }
-        this.plugin.settings.batches_limit = v;
-        await this.plugin.saveSettings();
-      });
-      text2.inputEl.setAttribute("type", "number");
-    });
-    new import_obsidian.Setting(containerSyncSettingEl).setName("Use timeouts instead of heartbeats").setDesc("If this option is enabled, PouchDB will hold the connection open for 60 seconds, and if no change arrives in that time, close and reopen the socket, instead of holding it open indefinitely. Useful when a proxy limits request duration but can increase resource usage.").addToggle(
-      (toggle) => {
-        toggle.setValue(this.plugin.settings.useTimeouts).onChange(async (value) => {
-          this.plugin.settings.useTimeouts = value;
-          await this.plugin.saveSettings();
-        });
-        return toggle;
-      }
-    );
-    new import_obsidian.Setting(containerSyncSettingEl).setName("A number of hashes to be cached").setDesc("").addText((text2) => {
-      text2.setPlaceholder("").setValue(this.plugin.settings.hashCacheMaxCount + "").onChange(async (value) => {
-        let v = Number(value);
-        if (isNaN(v) || v < 10) {
-          v = 10;
-        }
-        this.plugin.settings.hashCacheMaxCount = v;
-        await this.plugin.saveSettings();
-      });
-      text2.inputEl.setAttribute("type", "number");
-    });
-    new import_obsidian.Setting(containerSyncSettingEl).setName("The total length of hashes to be cached").setDesc("(Mega chars)").addText((text2) => {
-      text2.setPlaceholder("").setValue(this.plugin.settings.hashCacheMaxAmount + "").onChange(async (value) => {
-        let v = Number(value);
-        if (isNaN(v) || v < 1) {
-          v = 1;
-        }
-        this.plugin.settings.hashCacheMaxAmount = v;
-        await this.plugin.saveSettings();
-      });
-      text2.inputEl.setAttribute("type", "number");
-    });
-    new import_obsidian.Setting(containerSyncSettingEl).setName("The maximum number of reading chunks online concurrently").setDesc("").addText((text2) => {
-      text2.setPlaceholder("").setValue(this.plugin.settings.concurrencyOfReadChunksOnline + "").onChange(async (value) => {
-        let v = Number(value);
-        if (isNaN(v) || v < 10) {
-          v = 10;
-        }
-        this.plugin.settings.concurrencyOfReadChunksOnline = v;
-        await this.plugin.saveSettings();
-      });
-      text2.inputEl.setAttribute("type", "number");
-    });
-    new import_obsidian.Setting(containerSyncSettingEl).setName("The minimum interval for reading chunks online").setDesc("").addText((text2) => {
-      text2.setPlaceholder("").setValue(this.plugin.settings.minimumIntervalOfReadChunksOnline + "").onChange(async (value) => {
-        let v = Number(value);
-        if (isNaN(v) || v < 10) {
-          v = 10;
-        }
-        this.plugin.settings.minimumIntervalOfReadChunksOnline = v;
-        await this.plugin.saveSettings();
-      });
-      text2.inputEl.setAttribute("type", "number");
-    });
-    addScreenElement("30", containerSyncSettingEl);
-    const containerMiscellaneousEl = containerEl.createDiv();
-    containerMiscellaneousEl.createEl("h3", { text: "Miscellaneous" });
-    new import_obsidian.Setting(containerMiscellaneousEl).setName("Show status inside editor").setDesc("").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.showStatusOnEditor).onChange(async (value) => {
-        this.plugin.settings.showStatusOnEditor = value;
-        await this.plugin.saveSettings();
-      })
-    );
     let currentPreset = "NONE";
-    new import_obsidian.Setting(containerMiscellaneousEl).setName("Presets").setDesc("Apply preset configuration").addDropdown(
-      (dropdown) => dropdown.addOptions({ NONE: "", LIVESYNC: "LiveSync", PERIODIC: "Periodic w/ batch", DISABLE: "Disable all sync" }).setValue(currentPreset).onChange((value) => currentPreset = value)
+    containerSyncSettingEl.createEl(
+      "div",
+      { text: `Please select any preset to complete wizard.` }
+    ).addClasses(["op-warn-info", "wizardOnly"]);
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Presets").setDesc("Apply preset configuration").addDropdown(
+      (dropdown) => dropdown.addOptions({ NONE: "", LIVESYNC: "LiveSync", PERIODIC: "Periodic w/ batch", DISABLE: "Disable all automatic" }).setValue(currentPreset).onChange((value) => currentPreset = value)
     ).addButton(
       (button) => button.setButtonText("Apply").setDisabled(false).setCta().onClick(async () => {
         if (currentPreset == "") {
@@ -18287,8 +20813,8 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
           };
         }
         this.plugin.saveSettings();
-        await this.plugin.realizeSettingSyncMode();
         this.display();
+        await this.plugin.realizeSettingSyncMode();
         if (inWizard) {
           this.plugin.app.setting.close();
           await this.plugin.resetLocalDatabase();
@@ -18305,34 +20831,313 @@ var ObsidianLiveSyncSettingTab = class extends import_obsidian.PluginSettingTab 
         }
       })
     );
-    const passphrase_options = {
-      "": "Default",
-      LOCALSTORAGE: "Use a custom passphrase",
-      ASK_AT_LAUNCH: "Ask an passphrase at every launch"
-    };
-    new import_obsidian.Setting(containerMiscellaneousEl).setName("Encrypting sensitive configuration items").addDropdown(
-      (dropdown) => dropdown.addOptions(passphrase_options).setValue(this.plugin.settings.configPassphraseStore).onChange(async (value) => {
-        this.plugin.settings.configPassphraseStore = value;
-        this.plugin.usedPassphrase = "";
-        confPassphraseSetting.setDisabled(this.plugin.settings.configPassphraseStore != "LOCALSTORAGE");
+    containerSyncSettingEl.createEl("h4", { text: "Synchronization Methods" }).addClass("wizardHidden");
+    const syncLive = [];
+    const syncNonLive = [];
+    let syncMode = "";
+    if (this.plugin.settings.liveSync) {
+      syncMode = "LIVESYNC";
+    } else if (this.plugin.settings.periodicReplication) {
+      syncMode = "PERIODIC";
+    }
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Sync Mode").setClass("wizardHidden").addDropdown(
+      (dropdown) => dropdown.addOptions({ "": "On events", PERIODIC: "Periodic and On events", "LIVESYNC": "LiveSync" }).setValue(syncMode).onChange(async (value) => {
+        this.plugin.settings.liveSync = false;
+        this.plugin.settings.periodicReplication = false;
+        if (value == "LIVESYNC") {
+          this.plugin.settings.liveSync = true;
+        } else if (value == "PERIODIC") {
+          this.plugin.settings.periodicReplication = true;
+        }
+        await this.plugin.saveSettings();
+        applyDisplayEnabled();
+        await this.plugin.realizeSettingSyncMode();
+        this.display();
+      })
+    );
+    if (!this.plugin.settings.liveSync) {
+      if (this.plugin.settings.periodicReplication) {
+        new import_obsidian.Setting(containerSyncSettingEl).setName("Periodic Sync interval").setDesc("Interval (sec)").setClass("wizardHidden").addText((text2) => {
+          text2.setPlaceholder("").setValue(this.plugin.settings.periodicReplicationInterval + "").onChange(async (value) => {
+            let v = Number(value);
+            if (isNaN(v) || v > 5e3) {
+              v = 0;
+            }
+            this.plugin.settings.periodicReplicationInterval = v;
+            await this.plugin.saveSettings();
+            applyDisplayEnabled();
+          });
+          text2.inputEl.setAttribute("type", "number");
+        });
+      }
+      new import_obsidian.Setting(containerSyncSettingEl).setName("Sync on Save").setDesc("When you save file, sync automatically").setClass("wizardHidden").addToggle(
+        (toggle) => toggle.setValue(this.plugin.settings.syncOnSave).onChange(async (value) => {
+          this.plugin.settings.syncOnSave = value;
+          await this.plugin.saveSettings();
+          applyDisplayEnabled();
+        })
+      );
+      new import_obsidian.Setting(containerSyncSettingEl).setName("Sync on File Open").setDesc("When you open file, sync automatically").setClass("wizardHidden").addToggle(
+        (toggle) => toggle.setValue(this.plugin.settings.syncOnFileOpen).onChange(async (value) => {
+          this.plugin.settings.syncOnFileOpen = value;
+          await this.plugin.saveSettings();
+          applyDisplayEnabled();
+        })
+      );
+      new import_obsidian.Setting(containerSyncSettingEl).setName("Sync on Start").setDesc("Start synchronization after launching Obsidian.").setClass("wizardHidden").addToggle(
+        (toggle) => toggle.setValue(this.plugin.settings.syncOnStart).onChange(async (value) => {
+          this.plugin.settings.syncOnStart = value;
+          await this.plugin.saveSettings();
+          applyDisplayEnabled();
+        })
+      );
+      new import_obsidian.Setting(containerSyncSettingEl).setName("Sync after merging file").setDesc("Sync automatically after merging files").setClass("wizardHidden").addToggle(
+        (toggle) => toggle.setValue(this.plugin.settings.syncAfterMerge).onChange(async (value) => {
+          this.plugin.settings.syncAfterMerge = value;
+          await this.plugin.saveSettings();
+          applyDisplayEnabled();
+        })
+      );
+    }
+    containerSyncSettingEl.createEl("h4", { text: "Deletions propagation" }).addClass("wizardHidden");
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Use the trash bin").setDesc("Do not delete files that are deleted in remote, just move to trash.").setClass("wizardHidden").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.trashInsteadDelete).onChange(async (value) => {
+        this.plugin.settings.trashInsteadDelete = value;
         await this.plugin.saveSettings();
       })
-    ).setClass("wizardHidden");
-    const confPassphrase = localStorage.getItem("ls-setting-passphrase") || "";
-    const confPassphraseSetting = new import_obsidian.Setting(containerMiscellaneousEl).setName("Passphrase of sensitive configuration items").setDesc("This passphrase will not be copied to another device. It will be set to `Default` until you configure it again.").addText((text2) => {
-      text2.setPlaceholder("").setValue(confPassphrase).onChange(async (value) => {
-        this.plugin.usedPassphrase = "";
-        localStorage.setItem("ls-setting-passphrase", value);
+    );
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Keep empty folder").setDesc("Normally, a folder is deleted when it becomes empty after a synchronization. Enabling this will prevent it from getting deleted").setClass("wizardHidden").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.doNotDeleteFolder).onChange(async (value) => {
+        this.plugin.settings.doNotDeleteFolder = value;
         await this.plugin.saveSettings();
-        markDirtyControl();
+      })
+    );
+    containerSyncSettingEl.createEl("h4", { text: "Conflict resolution" }).addClass("wizardHidden");
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Always overwrite with a newer file (beta)").setDesc("(Def off) Resolve conflicts by newer files automatically.").setClass("wizardHidden").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.resolveConflictsByNewerFile).onChange(async (value) => {
+        this.plugin.settings.resolveConflictsByNewerFile = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Postpone resolution of unopened files").setClass("wizardHidden").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.checkConflictOnlyOnOpen).onChange(async (value) => {
+        this.plugin.settings.checkConflictOnlyOnOpen = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    containerSyncSettingEl.createEl("h4", { text: "Compatibility" }).addClass("wizardHidden");
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Always resolve conflict manually").setDesc("If this switch is turned on, a merge dialog will be displayed, even if the sensible-merge is possible automatically. (Turn on to previous behavior)").setClass("wizardHidden").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.disableMarkdownAutoMerge).onChange(async (value) => {
+        this.plugin.settings.disableMarkdownAutoMerge = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Always reflect synchronized changes even if the note has a conflict").setDesc("Turn on to previous behavior").setClass("wizardHidden").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.writeDocumentsIfConflicted).onChange(async (value) => {
+        this.plugin.settings.writeDocumentsIfConflicted = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    containerSyncSettingEl.createEl("h4", { text: "Hidden files" }).addClass("wizardHidden");
+    const LABEL_ENABLED = "\u{1F501} : Enabled";
+    const LABEL_DISABLED = "\u23F9\uFE0F : Disabled";
+    const hiddenFileSyncSetting = new import_obsidian.Setting(containerSyncSettingEl).setName("Hidden file synchronization").setClass("wizardHidden");
+    const hiddenFileSyncSettingEl = hiddenFileSyncSetting.settingEl;
+    const hiddenFileSyncSettingDiv = hiddenFileSyncSettingEl.createDiv("");
+    hiddenFileSyncSettingDiv.innerText = this.plugin.settings.syncInternalFiles ? LABEL_ENABLED : LABEL_DISABLED;
+    if (this.plugin.settings.syncInternalFiles) {
+      new import_obsidian.Setting(containerSyncSettingEl).setName("Disable Hidden files sync").setClass("wizardHidden").addButton((button) => {
+        button.setButtonText("Disable").onClick(async () => {
+          this.plugin.settings.syncInternalFiles = false;
+          await this.plugin.saveSettings();
+          this.display();
+        });
       });
-      text2.inputEl.setAttribute("type", "password");
-    }).setClass("wizardHidden");
-    confPassphraseSetting.setDisabled(this.plugin.settings.configPassphraseStore != "LOCALSTORAGE");
-    const infoApply = containerMiscellaneousEl.createEl("div", { text: `To finish setup, please select one of the presets` });
-    infoApply.addClass("op-warn-info");
-    infoApply.addClass("wizardOnly");
-    addScreenElement("40", containerMiscellaneousEl);
+    } else {
+      new import_obsidian.Setting(containerSyncSettingEl).setName("Enable Hidden files sync").setClass("wizardHidden").addButton((button) => {
+        button.setButtonText("Merge").onClick(async () => {
+          this.plugin.app.setting.close();
+          await this.plugin.addOnSetup.configureHiddenFileSync("MERGE");
+        });
+      }).addButton((button) => {
+        button.setButtonText("Fetch").onClick(async () => {
+          this.plugin.app.setting.close();
+          await this.plugin.addOnSetup.configureHiddenFileSync("FETCH");
+        });
+      }).addButton((button) => {
+        button.setButtonText("Overwrite").onClick(async () => {
+          this.plugin.app.setting.close();
+          await this.plugin.addOnSetup.configureHiddenFileSync("OVERWRITE");
+        });
+      });
+    }
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Scan for hidden files before replication").setDesc("This configuration will be ignored if monitoring changes is enabled.").setClass("wizardHidden").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.syncInternalFilesBeforeReplication).onChange(async (value) => {
+        this.plugin.settings.syncInternalFilesBeforeReplication = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Scan hidden files periodically").setDesc("Seconds, 0 to disable. This configuration will be ignored if monitoring changes is enabled.").setClass("wizardHidden").addText((text2) => {
+      text2.setPlaceholder("").setValue(this.plugin.settings.syncInternalFilesInterval + "").onChange(async (value) => {
+        let v = Number(value);
+        if (isNaN(v) || v < 10) {
+          v = 10;
+        }
+        this.plugin.settings.syncInternalFilesInterval = v;
+        await this.plugin.saveSettings();
+      });
+      text2.inputEl.setAttribute("type", "number");
+    });
+    let skipPatternTextArea = null;
+    const defaultSkipPattern = "\\/node_modules\\/, \\/\\.git\\/, \\/obsidian-livesync\\/";
+    const defaultSkipPatternXPlat = defaultSkipPattern + ",\\/workspace$ ,\\/workspace.json$";
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Skip patterns").setDesc(
+      "Regular expression, If you use hidden file sync between desktop and mobile, adding `workspace$` is recommended."
+    ).setClass("wizardHidden").addTextArea(
+      (text2) => {
+        text2.setValue(this.plugin.settings.syncInternalFilesIgnorePatterns).setPlaceholder("\\/node_modules\\/, \\/\\.git\\/").onChange(async (value) => {
+          this.plugin.settings.syncInternalFilesIgnorePatterns = value;
+          await this.plugin.saveSettings();
+        });
+        skipPatternTextArea = text2;
+        return text2;
+      }
+    );
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Restore the skip pattern to default").setClass("wizardHidden").addButton((button) => {
+      button.setButtonText("Default").onClick(async () => {
+        skipPatternTextArea.setValue(defaultSkipPattern);
+        this.plugin.settings.syncInternalFilesIgnorePatterns = defaultSkipPattern;
+        await this.plugin.saveSettings();
+      });
+    }).addButton((button) => {
+      button.setButtonText("Cross-platform").onClick(async () => {
+        skipPatternTextArea.setValue(defaultSkipPatternXPlat);
+        this.plugin.settings.syncInternalFilesIgnorePatterns = defaultSkipPatternXPlat;
+        await this.plugin.saveSettings();
+      });
+    });
+    containerSyncSettingEl.createEl("h4", { text: "Performance tweaks" }).addClass("wizardHidden");
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Batch database update").setDesc("Reducing the frequency with which on-disk changes are reflected into the DB").setClass("wizardHidden").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.batchSave).onChange(async (value) => {
+        this.plugin.settings.batchSave = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Enhance chunk size").setDesc("Enhance chunk size for binary files (0.1MBytes). This cannot be increased when using IBM Cloudant.").setClass("wizardHidden").addText((text2) => {
+      text2.setPlaceholder("").setValue(this.plugin.settings.customChunkSize + "").onChange(async (value) => {
+        let v = Number(value);
+        if (isNaN(v) || v < 1) {
+          v = 1;
+        }
+        this.plugin.settings.customChunkSize = v;
+        await this.plugin.saveSettings();
+      });
+      text2.inputEl.setAttribute("type", "number");
+    });
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Fetch chunks on demand").setDesc("(ex. Read chunks online) If this option is enabled, LiveSync reads chunks online directly instead of replicating them locally. Increasing Custom chunk size is recommended.").setClass("wizardHidden").addToggle((toggle) => {
+      toggle.setValue(this.plugin.settings.readChunksOnline).onChange(async (value) => {
+        this.plugin.settings.readChunksOnline = value;
+        await this.plugin.saveSettings();
+      });
+      return toggle;
+    });
+    containerSyncSettingEl.createEl("h4", {
+      text: (0, import_obsidian.sanitizeHTMLToDom)(`Synchronization target filters`)
+    }).addClass("wizardHidden");
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Regular expression to ignore files").setDesc("If this is set, any changes to local and remote files that match this will be skipped.").setClass("wizardHidden").addTextArea(
+      (text2) => {
+        text2.setValue(this.plugin.settings.syncIgnoreRegEx).setPlaceholder("\\.pdf$").onChange(async (value) => {
+          let isValidRegExp = false;
+          try {
+            new RegExp(value);
+            isValidRegExp = true;
+          } catch (_) {
+          }
+          if (isValidRegExp || value.trim() == "") {
+            this.plugin.settings.syncIgnoreRegEx = value;
+            await this.plugin.saveSettings();
+          }
+        });
+        return text2;
+      }
+    );
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Regular expression for restricting synchronization targets").setDesc("If this is set, changes to local and remote files that only match this will be processed.").setClass("wizardHidden").addTextArea(
+      (text2) => {
+        text2.setValue(this.plugin.settings.syncOnlyRegEx).setPlaceholder("\\.md$|\\.txt").onChange(async (value) => {
+          let isValidRegExp = false;
+          try {
+            new RegExp(value);
+            isValidRegExp = true;
+          } catch (_) {
+          }
+          if (isValidRegExp || value.trim() == "") {
+            this.plugin.settings.syncOnlyRegEx = value;
+            await this.plugin.saveSettings();
+          }
+        });
+        return text2;
+      }
+    );
+    containerSyncSettingEl.createEl("h4", {
+      text: (0, import_obsidian.sanitizeHTMLToDom)(`Advanced settings`)
+    }).addClass("wizardHidden");
+    containerSyncSettingEl.createEl("div", {
+      text: `If you reached the payload size limit when using IBM Cloudant, please decrease batch size and batch limit to a lower value.`
+    }).addClass("wizardHidden");
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Batch size").setDesc("Number of change feed items to process at a time. Defaults to 50.").setClass("wizardHidden").addText((text2) => {
+      text2.setPlaceholder("").setValue(this.plugin.settings.batch_size + "").onChange(async (value) => {
+        let v = Number(value);
+        if (isNaN(v) || v < 10) {
+          v = 10;
+        }
+        this.plugin.settings.batch_size = v;
+        await this.plugin.saveSettings();
+      });
+      text2.inputEl.setAttribute("type", "number");
+    });
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Batch limit").setDesc("Number of batches to process at a time. Defaults to 40. This along with batch size controls how many docs are kept in memory at a time.").setClass("wizardHidden").addText((text2) => {
+      text2.setPlaceholder("").setValue(this.plugin.settings.batches_limit + "").onChange(async (value) => {
+        let v = Number(value);
+        if (isNaN(v) || v < 10) {
+          v = 10;
+        }
+        this.plugin.settings.batches_limit = v;
+        await this.plugin.saveSettings();
+      });
+      text2.inputEl.setAttribute("type", "number");
+    });
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Use timeouts instead of heartbeats").setDesc("If this option is enabled, PouchDB will hold the connection open for 60 seconds, and if no change arrives in that time, close and reopen the socket, instead of holding it open indefinitely. Useful when a proxy limits request duration but can increase resource usage.").setClass("wizardHidden").addToggle(
+      (toggle) => {
+        toggle.setValue(this.plugin.settings.useTimeouts).onChange(async (value) => {
+          this.plugin.settings.useTimeouts = value;
+          await this.plugin.saveSettings();
+        });
+        return toggle;
+      }
+    );
+    new import_obsidian.Setting(containerSyncSettingEl).setName("Batch size of on-demand fetching").setDesc("").setClass("wizardHidden").addText((text2) => {
+      text2.setPlaceholder("").setValue(this.plugin.settings.concurrencyOfReadChunksOnline + "").onChange(async (value) => {
+        let v = Number(value);
+        if (isNaN(v) || v < 10) {
+          v = 10;
+        }
+        this.plugin.settings.concurrencyOfReadChunksOnline = v;
+        await this.plugin.saveSettings();
+      });
+      text2.inputEl.setAttribute("type", "number");
+    });
+    new import_obsidian.Setting(containerSyncSettingEl).setName("The delay for consecutive on-demand fetches").setDesc("").setClass("wizardHidden").addText((text2) => {
+      text2.setPlaceholder("").setValue(this.plugin.settings.minimumIntervalOfReadChunksOnline + "").onChange(async (value) => {
+        let v = Number(value);
+        if (isNaN(v) || v < 10) {
+          v = 10;
+        }
+        this.plugin.settings.minimumIntervalOfReadChunksOnline = v;
+        await this.plugin.saveSettings();
+      });
+      text2.inputEl.setAttribute("type", "number");
+    });
+    addScreenElement("30", containerSyncSettingEl);
     const containerHatchEl = containerEl.createDiv();
     containerHatchEl.createEl("h3", { text: "Hatch" });
     new import_obsidian.Setting(containerHatchEl).setName("Make report to inform the issue").addButton(
@@ -18434,121 +21239,182 @@ ${file.path}`, LOG_LEVEL.NOTICE, "verify");
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian.Setting(containerHatchEl).setName("Discard local database to reset or uninstall Self-hosted LiveSync").addButton(
+    new import_obsidian.Setting(containerHatchEl).setName("Do not pace synchronization").setDesc("If this toggle enabled, synchronisation will not be paced by queued entries. If synchronisation has been deadlocked, please make this enabled once.").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.doNotPaceReplication).onChange(async (value) => {
+        this.plugin.settings.doNotPaceReplication = value;
+        await this.plugin.saveSettings();
+      })
+    );
+    containerHatchEl.createEl("h4", {
+      text: (0, import_obsidian.sanitizeHTMLToDom)(`Compatibility`),
+      cls: "wizardHidden"
+    });
+    new import_obsidian.Setting(containerHatchEl).setName("Do not keep metadata of deleted files.").setClass("wizardHidden").addToggle(
+      (toggle) => {
+        toggle.setValue(this.plugin.settings.deleteMetadataOfDeletedFiles).onChange(async (value) => {
+          this.plugin.settings.deleteMetadataOfDeletedFiles = value;
+          await this.plugin.saveSettings();
+          this.display();
+        });
+      }
+    );
+    if (this.plugin.settings.deleteMetadataOfDeletedFiles) {
+      new import_obsidian.Setting(containerHatchEl).setName("Delete old metadata of deleted files on start-up").setClass("wizardHidden").setDesc("(Days passed, 0 to disable automatic-deletion)").addText((text2) => {
+        text2.setPlaceholder("").setValue(this.plugin.settings.automaticallyDeleteMetadataOfDeletedFiles + "").onChange(async (value) => {
+          let v = Number(value);
+          if (isNaN(v)) {
+            v = 0;
+          }
+          this.plugin.settings.automaticallyDeleteMetadataOfDeletedFiles = v;
+          await this.plugin.saveSettings();
+        });
+        text2.inputEl.setAttribute("type", "number");
+      });
+    }
+    new import_obsidian.Setting(containerHatchEl).setName("Use an old adapter for compatibility").setDesc("This option is not compatible with a database made by older versions. Changing this configuration will fetch the remote database again.").setClass("wizardHidden").addToggle(
+      (toggle) => toggle.setValue(!this.plugin.settings.useIndexedDBAdapter).onChange(async (value) => {
+        this.plugin.settings.useIndexedDBAdapter = !value;
+        await this.plugin.saveSettings();
+        await rebuildDB("localOnly");
+      })
+    );
+    new import_obsidian.Setting(containerHatchEl).setName("Scan changes on customization sync").setDesc("Do not use internal API").addToggle(
+      (toggle) => toggle.setValue(!this.plugin.settings.watchInternalFileChanges).onChange(async (value) => {
+        this.plugin.settings.watchInternalFileChanges = !value;
+        await this.plugin.saveSettings();
+      })
+    );
+    let newDatabaseName = this.plugin.settings.additionalSuffixOfDatabaseName + "";
+    new import_obsidian.Setting(containerHatchEl).setName("Database suffix").setDesc("LiveSync could not treat multiple vaults which have same name, please add some suffix from here.").addText((text2) => {
+      text2.setPlaceholder("").setValue(newDatabaseName).onChange((value) => {
+        newDatabaseName = value;
+      });
+    }).addButton((button) => {
+      button.setButtonText("Change").onClick(async () => {
+        if (this.plugin.settings.additionalSuffixOfDatabaseName == newDatabaseName) {
+          Logger("Suffix was not changed.", LOG_LEVEL.NOTICE);
+          return;
+        }
+        this.plugin.settings.additionalSuffixOfDatabaseName = newDatabaseName;
+        await this.plugin.saveSettings();
+        Logger("Suffix has been changed. Reopening database...", LOG_LEVEL.NOTICE);
+        await this.plugin.initializeDatabase();
+      });
+    });
+    addScreenElement("50", containerHatchEl);
+    const containerPluginSettings = containerEl.createDiv();
+    containerPluginSettings.createEl("h3", { text: "Customization sync (beta)" });
+    const vaultName = new import_obsidian.Setting(containerPluginSettings).setName("Device name").setDesc("Unique name between all synchronized devices").addText((text2) => {
+      text2.setPlaceholder("desktop").setValue(this.plugin.deviceAndVaultName).onChange(async (value) => {
+        this.plugin.deviceAndVaultName = value;
+        await this.plugin.saveSettings();
+      });
+    });
+    const updateDisabledOfDeviceAndVaultName = () => {
+      vaultName.setDisabled(this.plugin.settings.usePluginSync);
+    };
+    updateDisabledOfDeviceAndVaultName;
+    new import_obsidian.Setting(containerPluginSettings).setName("Enable customization sync").addToggle(
+      (toggle) => toggle.setValue(this.plugin.settings.usePluginSync).onChange(async (value) => {
+        if (value && this.plugin.deviceAndVaultName.trim() == "") {
+          Logger("We have to configure `Device name` to use this feature.", LOG_LEVEL.NOTICE);
+          toggle.setValue(false);
+          return false;
+        }
+        this.plugin.settings.usePluginSync = value;
+        this.display();
+        await this.plugin.saveSettings();
+      })
+    );
+    if (this.plugin.settings.usePluginSync) {
+      new import_obsidian.Setting(containerPluginSettings).setName("Scan customization automatically").setDesc("Scan customization before replicating.").addToggle(
+        (toggle) => toggle.setValue(this.plugin.settings.autoSweepPlugins).onChange(async (value) => {
+          this.plugin.settings.autoSweepPlugins = value;
+          updateDisabledOfDeviceAndVaultName();
+          await this.plugin.saveSettings();
+        })
+      );
+      new import_obsidian.Setting(containerPluginSettings).setName("Scan customization periodically").setDesc("Scan customization every 1 minute. This configuration will be ignored if monitoring changes of hidden files has been enabled.").addToggle(
+        (toggle) => toggle.setValue(this.plugin.settings.autoSweepPluginsPeriodic).onChange(async (value) => {
+          this.plugin.settings.autoSweepPluginsPeriodic = value;
+          updateDisabledOfDeviceAndVaultName();
+          await this.plugin.saveSettings();
+        })
+      );
+      new import_obsidian.Setting(containerPluginSettings).setName("Notify customized").setDesc("Notify when other device has newly customized.").addToggle(
+        (toggle) => toggle.setValue(this.plugin.settings.notifyPluginOrSettingUpdated).onChange(async (value) => {
+          this.plugin.settings.notifyPluginOrSettingUpdated = value;
+          await this.plugin.saveSettings();
+        })
+      );
+      new import_obsidian.Setting(containerPluginSettings).setName("Open").setDesc("Open the dialog").addButton((button) => {
+        button.setButtonText("Open").setDisabled(false).onClick(() => {
+          this.plugin.addOnConfigSync.showPluginSyncModal();
+        });
+      });
+    }
+    updateDisabledOfDeviceAndVaultName();
+    addScreenElement("60", containerPluginSettings);
+    const containerMaintenanceEl = containerEl.createDiv();
+    containerMaintenanceEl.createEl("h3", { text: "Maintain databases" });
+    containerMaintenanceEl.createEl("h4", { text: "The remote database" });
+    new import_obsidian.Setting(containerMaintenanceEl).setName("Lock remote database").setDesc("Lock remote database to prevent synchronization with other devices.").addButton(
+      (button) => button.setButtonText("Lock").setDisabled(false).setWarning().onClick(async () => {
+        await this.plugin.markRemoteLocked();
+      })
+    );
+    new import_obsidian.Setting(containerMaintenanceEl).setName("Overwrite remote database").setDesc("Overwrite remote database with local DB and passphrase.").addButton(
+      (button) => button.setButtonText("Send").setWarning().setDisabled(false).onClick(async () => {
+        await rebuildDB("remoteOnly");
+      })
+    );
+    new import_obsidian.Setting(containerMaintenanceEl).setName("(Beta) Clean the remote database").setDesc("").addButton(
+      (button) => button.setButtonText("Count").setDisabled(false).onClick(async () => {
+        await remoteDatabaseCleanup(this.plugin, true);
+      })
+    ).addButton(
+      (button) => button.setButtonText("Perform cleaning").setDisabled(false).setWarning().onClick(async () => {
+        this.plugin.app.setting.close();
+        await remoteDatabaseCleanup(this.plugin, false);
+        await balanceChunks(this.plugin, false);
+      })
+    );
+    containerMaintenanceEl.createEl("h4", { text: "The local database" });
+    new import_obsidian.Setting(containerMaintenanceEl).setName("Fetch rebuilt DB").setDesc("Restore or reconstruct local database from remote database.").addButton(
+      (button) => button.setButtonText("Fetch").setWarning().setDisabled(false).onClick(async () => {
+        await rebuildDB("localOnly");
+      })
+    );
+    new import_obsidian.Setting(containerMaintenanceEl).setName("(Beta) Clean the local database").setDesc("This feature requires disabling 'Use an old adapter for compatibility'").addButton(
+      (button) => button.setButtonText("Count").setDisabled(false).onClick(async () => {
+        await localDatabaseCleanUp(this.plugin, false, true);
+      })
+    ).addButton(
+      (button) => button.setButtonText("Perform cleaning").setDisabled(false).setWarning().onClick(async () => {
+        this.plugin.app.setting.close();
+        await localDatabaseCleanUp(this.plugin, false, false);
+      })
+    );
+    new import_obsidian.Setting(containerMaintenanceEl).setName("Discard local database to reset or uninstall Self-hosted LiveSync").addButton(
       (button) => button.setButtonText("Discard").setWarning().setDisabled(false).onClick(async () => {
         await this.plugin.resetLocalDatabase();
         await this.plugin.initializeDatabase();
       })
     );
-    addScreenElement("50", containerHatchEl);
-    const containerPluginSettings = containerEl.createDiv();
-    containerPluginSettings.createEl("h3", { text: "Plugins and settings (beta)" });
-    const updateDisabledOfDeviceAndVaultName = () => {
-      vaultName.setDisabled(this.plugin.settings.autoSweepPlugins || this.plugin.settings.autoSweepPluginsPeriodic);
-      vaultName.setTooltip(this.plugin.settings.autoSweepPlugins || this.plugin.settings.autoSweepPluginsPeriodic ? "You could not change when you enabling auto scan." : "");
-    };
-    new import_obsidian.Setting(containerPluginSettings).setName("Enable plugin synchronization").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.usePluginSync).onChange(async (value) => {
-        this.plugin.settings.usePluginSync = value;
-        await this.plugin.saveSettings();
+    containerMaintenanceEl.createEl("h4", { text: "Both databases" });
+    new import_obsidian.Setting(containerMaintenanceEl).setName("Rebuild everything").setDesc("Rebuild local and remote database with local files.").addButton(
+      (button) => button.setButtonText("Rebuild").setWarning().setDisabled(false).onClick(async () => {
+        await rebuildDB("rebuildBothByThisDevice");
       })
     );
-    new import_obsidian.Setting(containerPluginSettings).setName("Scan plugins automatically").setDesc("Scan plugins before replicating.").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.autoSweepPlugins).onChange(async (value) => {
-        this.plugin.settings.autoSweepPlugins = value;
-        updateDisabledOfDeviceAndVaultName();
-        await this.plugin.saveSettings();
+    new import_obsidian.Setting(containerMaintenanceEl).setName("(Beta) Complement each other with possible missing chunks.").setDesc("").addButton(
+      (button) => button.setButtonText("Balance").setWarning().setDisabled(false).onClick(async () => {
+        await balanceChunks(this.plugin, false);
       })
     );
-    new import_obsidian.Setting(containerPluginSettings).setName("Scan plugins periodically").setDesc("Scan plugins every 1 minute. This configuration will be ignored if monitoring changes of hidden files has been enabled.").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.autoSweepPluginsPeriodic).onChange(async (value) => {
-        this.plugin.settings.autoSweepPluginsPeriodic = value;
-        updateDisabledOfDeviceAndVaultName();
-        await this.plugin.saveSettings();
-      })
-    );
-    new import_obsidian.Setting(containerPluginSettings).setName("Notify updates").setDesc("Notify when any device has a newer plugin or its setting.").addToggle(
-      (toggle) => toggle.setValue(this.plugin.settings.notifyPluginOrSettingUpdated).onChange(async (value) => {
-        this.plugin.settings.notifyPluginOrSettingUpdated = value;
-        await this.plugin.saveSettings();
-      })
-    );
-    const vaultName = new import_obsidian.Setting(containerPluginSettings).setName("Device and Vault name").setDesc("").addText((text2) => {
-      text2.setPlaceholder("desktop-main").setValue(this.plugin.deviceAndVaultName).onChange(async (value) => {
-        this.plugin.deviceAndVaultName = value;
-        await this.plugin.saveSettings();
-      });
-    });
-    new import_obsidian.Setting(containerPluginSettings).setName("Open").setDesc("Open the plugin dialog").addButton((button) => {
-      button.setButtonText("Open").setDisabled(false).onClick(() => {
-        this.plugin.addOnPluginAndTheirSettings.showPluginSyncModal();
-      });
-    });
-    updateDisabledOfDeviceAndVaultName();
-    addScreenElement("60", containerPluginSettings);
-    const containerCorruptedDataEl = containerEl.createDiv();
-    containerCorruptedDataEl.createEl("h3", { text: "Corrupted or missing data" });
-    containerCorruptedDataEl.createEl("h4", { text: "Corrupted" });
-    if (Object.keys(this.plugin.localDatabase.corruptedEntries).length > 0) {
-      const cx = containerCorruptedDataEl.createEl("div", { text: "If you have a copy of these files on any device, simply edit them once and sync. If not, there's nothing we can do except deleting them. sorry.." });
-      for (const k in this.plugin.localDatabase.corruptedEntries) {
-        const xx = cx.createEl("div", { text: `${k}` });
-        const ba = xx.createEl("button", { text: `Delete this` }, (e2) => {
-          e2.addEventListener("click", async () => {
-            await this.plugin.localDatabase.deleteDBEntry(k);
-            xx.remove();
-          });
-        });
-        ba.addClass("mod-warning");
-        xx.createEl("button", { text: `Restore from file` }, (e2) => {
-          e2.addEventListener("click", async () => {
-            const f3 = await this.app.vault.getFiles().filter((e3) => path2id(e3.path) == k);
-            if (f3.length == 0) {
-              Logger("Not found in vault", LOG_LEVEL.NOTICE);
-              return;
-            }
-            await this.plugin.updateIntoDB(f3[0]);
-            xx.remove();
-          });
-        });
-        xx.addClass("mod-warning");
-      }
-    } else {
-      containerCorruptedDataEl.createEl("div", { text: "There is no corrupted data." });
-    }
-    containerCorruptedDataEl.createEl("h4", { text: "Missing or waiting" });
-    if (Object.keys(this.plugin.queuedFiles).length > 0) {
-      const cx = containerCorruptedDataEl.createEl("div", {
-        text: "These files have missing or waiting chunks. Perhaps these chunks will arrive in a while after replication. But if they don't, you have to restore it's database entry from a existing local file by hitting the button below."
-      });
-      const files = [.../* @__PURE__ */ new Set([...this.plugin.queuedFiles.map((e2) => e2.entry._id)])];
-      for (const k of files) {
-        const xx = cx.createEl("div", { text: `${id2path(k)}` });
-        const ba = xx.createEl("button", { text: `Delete this` }, (e2) => {
-          e2.addEventListener("click", async () => {
-            await this.plugin.localDatabase.deleteDBEntry(k);
-            xx.remove();
-          });
-        });
-        ba.addClass("mod-warning");
-        xx.createEl("button", { text: `Restore from file` }, (e2) => {
-          e2.addEventListener("click", async () => {
-            const f3 = await this.app.vault.getFiles().filter((e3) => path2id(e3.path) == k);
-            if (f3.length == 0) {
-              Logger("Not found in vault", LOG_LEVEL.NOTICE);
-              return;
-            }
-            await this.plugin.updateIntoDB(f3[0]);
-            xx.remove();
-          });
-        });
-        xx.addClass("mod-warning");
-      }
-    } else {
-      containerCorruptedDataEl.createEl("div", { text: "There is no missing or waiting chunk." });
-    }
     applyDisplayEnabled();
-    addScreenElement("70", containerCorruptedDataEl);
+    addScreenElement("70", containerMaintenanceEl);
+    applyDisplayEnabled();
     if (this.selectedScreen == "") {
       if (lastVersion != this.plugin.settings.lastReadUpdates) {
         if (JSON.stringify(this.plugin.settings) != JSON.stringify(DEFAULT_SETTINGS)) {
@@ -18558,7 +21424,7 @@ ${file.path}`, LOG_LEVEL.NOTICE, "verify");
         }
       } else {
         if (isAnySyncEnabled()) {
-          changeDisplay("0");
+          changeDisplay("20");
         } else {
           changeDisplay("110");
         }
@@ -18570,24 +21436,31 @@ ${file.path}`, LOG_LEVEL.NOTICE, "verify");
 };
 
 // src/DocumentHistoryModal.ts
-var import_diff_match_patch2 = __toESM(require_diff_match_patch(), 1);
+var import_diff_match_patch3 = __toESM(require_diff_match_patch(), 1);
 var DocumentHistoryModal = class extends import_obsidian.Modal {
-  constructor(app2, plugin2, file) {
+  constructor(app2, plugin2, file, id) {
     super(app2);
     this.showDiff = false;
     this.revs_info = [];
     this.currentText = "";
     this.currentDeleted = false;
     this.plugin = plugin2;
-    this.file = file instanceof import_obsidian.TFile ? file.path : file;
+    this.file = file instanceof import_obsidian.TFile ? getPathFromTFile(file) : file;
+    this.id = id;
+    if (!file) {
+      this.file = this.plugin.id2path(id, null);
+    }
     if (localStorage.getItem("ols-history-highlightdiff") == "1") {
       this.showDiff = true;
     }
   }
   async loadFile() {
+    if (!this.id) {
+      this.id = await this.plugin.path2id(this.file);
+    }
     const db = this.plugin.localDatabase;
     try {
-      const w = await db.localDatabase.get(path2id(this.file), { revs_info: true });
+      const w = await db.localDatabase.get(this.id, { revs_info: true });
       this.revs_info = w._revs_info.filter((e2) => (e2 == null ? void 0 : e2.status) == "available");
       this.range.max = `${this.revs_info.length - 1}`;
       this.range.value = this.range.max;
@@ -18600,6 +21473,9 @@ var DocumentHistoryModal = class extends import_obsidian.Modal {
         this.range.disabled = true;
         this.showDiff;
         this.contentView.setText(`History of this file was not recorded.`);
+      } else {
+        this.contentView.setText(`Error occurred.`);
+        Logger(ex, LOG_LEVEL.VERBOSE);
       }
     }
   }
@@ -18609,7 +21485,7 @@ var DocumentHistoryModal = class extends import_obsidian.Modal {
     const db = this.plugin.localDatabase;
     const index5 = this.revs_info.length - 1 - this.range.value / 1;
     const rev2 = this.revs_info[index5];
-    const w = await db.getDBEntry(path2id(this.file), { rev: rev2.rev }, false, false, true);
+    const w = await db.getDBEntry(this.file, { rev: rev2.rev }, false, false, true);
     this.currentText = "";
     this.currentDeleted = false;
     if (w === false) {
@@ -18627,20 +21503,20 @@ var DocumentHistoryModal = class extends import_obsidian.Modal {
         const prevRevIdx = this.revs_info.length - 1 - (this.range.value / 1 - 1);
         if (prevRevIdx >= 0 && prevRevIdx < this.revs_info.length) {
           const oldRev = this.revs_info[prevRevIdx].rev;
-          const w2 = await db.getDBEntry(path2id(this.file), { rev: oldRev }, false, false, true);
+          const w2 = await db.getDBEntry(this.file, { rev: oldRev }, false, false, true);
           if (w2 != false) {
-            const dmp = new import_diff_match_patch2.diff_match_patch();
+            const dmp = new import_diff_match_patch3.diff_match_patch();
             const w2data = w2.datatype == "plain" ? getDocData(w2.data) : base64ToString(w2.data);
             const diff = dmp.diff_main(w2data, w1data);
             dmp.diff_cleanupSemantic(diff);
             for (const v of diff) {
               const x1 = v[0];
               const x2 = v[1];
-              if (x1 == import_diff_match_patch2.DIFF_DELETE) {
+              if (x1 == import_diff_match_patch3.DIFF_DELETE) {
                 result += "<span class='history-deleted'>" + escapeStringToHTML(x2) + "</span>";
-              } else if (x1 == import_diff_match_patch2.DIFF_EQUAL) {
+              } else if (x1 == import_diff_match_patch3.DIFF_EQUAL) {
                 result += "<span class='history-normal'>" + escapeStringToHTML(x2) + "</span>";
-              } else if (x1 == import_diff_match_patch2.DIFF_INSERT) {
+              } else if (x1 == import_diff_match_patch3.DIFF_INSERT) {
                 result += "<span class='history-added'>" + escapeStringToHTML(x2) + "</span>";
               }
             }
@@ -18719,7 +21595,7 @@ var DocumentHistoryModal = class extends import_obsidian.Modal {
       e2.addClass("mod-cta");
       e2.addEventListener("click", async () => {
         var _a, _b;
-        const pathToWrite = this.file.startsWith("i:") ? this.file.substring("i:".length) : this.file;
+        const pathToWrite = stripPrefix(this.file);
         if (!isValidPath(pathToWrite)) {
           Logger("Path is not valid to write content.", LOG_LEVEL.INFO);
         }
@@ -18742,6 +21618,37 @@ var DocumentHistoryModal = class extends import_obsidian.Modal {
     contentEl.empty();
   }
 };
+
+// src/lib/src/wrapper.ts
+var WrappedNotice = class {
+  constructor(message, timeout) {
+    var _a;
+    let strMessage = "";
+    if (message instanceof DocumentFragment) {
+      strMessage = (_a = message.textContent) != null ? _a : "";
+    } else {
+      strMessage = message;
+    }
+    Logger(strMessage, LOG_LEVEL.NOTICE);
+  }
+  setMessage(message) {
+    var _a;
+    let strMessage = "";
+    if (message instanceof DocumentFragment) {
+      strMessage = (_a = message.textContent) != null ? _a : "";
+    } else {
+      strMessage = message;
+    }
+    Logger(strMessage, LOG_LEVEL.NOTICE);
+    return this;
+  }
+  hide() {
+  }
+};
+var _notice = WrappedNotice;
+function setNoticeClass(notice) {
+  _notice = notice;
+}
 
 // src/StorageEventManager.ts
 var StorageEventManager = class {
@@ -18775,13 +21682,13 @@ var StorageEventManagerObsidian = class extends StorageEventManager {
   watchVaultRename(file, oldFile, ctx) {
     if (file instanceof import_obsidian.TFile) {
       this.appendWatchEvent([
-        { type: "CREATE", file },
-        { type: "DELETE", file: { path: oldFile, mtime: file.stat.mtime, ctime: file.stat.ctime, size: file.stat.size, deleted: true } }
+        { type: "DELETE", file: { path: oldFile, mtime: file.stat.mtime, ctime: file.stat.ctime, size: file.stat.size, deleted: true } },
+        { type: "CREATE", file }
       ], ctx);
     }
   }
   watchVaultRawEvents(path) {
-    if (!this.plugin.settings.syncInternalFiles)
+    if (!this.plugin.settings.syncInternalFiles && !this.plugin.settings.usePluginSync)
       return;
     if (!this.plugin.settings.watchInternalFileChanges)
       return;
@@ -18830,7 +21737,7 @@ var StorageEventManagerObsidian = class extends StorageEventManager {
       if (type == "DELETE" || type == "RENAME") {
         forcePerform = true;
       }
-      if (this.plugin.settings.batchSave) {
+      if (this.plugin.settings.batchSave && !this.plugin.settings.liveSync) {
         let i = this.watchedFileEventQueue.length;
         L1:
           while (i >= 0) {
@@ -18921,61 +21828,14 @@ async function xxhash_wasm_default() {
   } };
 }
 
-// src/lib/src/LRUCache.ts
-var LRUCache = class {
-  constructor(maxCache, maxCacheLength) {
-    this.cache = /* @__PURE__ */ new Map([]);
-    this.revCache = /* @__PURE__ */ new Map([]);
-    this.maxCache = 200;
-    this.maxCachedLength = 5e7;
-    this.cachedLength = 0;
-    this.maxCache = maxCache || 200;
-    this.maxCachedLength = (maxCacheLength || 1) * 1e6;
-    Logger(`Cache initialized ${this.maxCache} / ${this.maxCachedLength}`, LOG_LEVEL.VERBOSE);
-  }
-  get(key) {
-    const v = this.cache.get(key);
-    if (v) {
-      this.cache.delete(key);
-      this.revCache.delete(v);
-      this.cache.set(key, v);
-      this.revCache.set(v, key);
-    }
-    return v;
-  }
-  revGet(value) {
-    const key = this.revCache.get(value);
-    if (value) {
-      this.cache.delete(key);
-      this.revCache.delete(value);
-      this.cache.set(key, value);
-      this.revCache.set(value, key);
-    }
-    return key;
-  }
-  set(key, value) {
-    this.cache.set(key, value);
-    this.revCache.set(value, key);
-    this.cachedLength += value.length;
-    if (this.cache.size > this.maxCache || this.cachedLength > this.maxCachedLength) {
-      for (const [key2, value2] of this.cache) {
-        this.revCache.delete(value2);
-        this.cache.delete(key2);
-        this.cachedLength -= value2.length;
-        if (this.cache.size <= this.maxCache && this.cachedLength <= this.maxCachedLength)
-          break;
-      }
-    } else {
-    }
-  }
-};
-
 // src/lib/src/LiveSyncDBFunctions.ts
 async function putDBEntry(env, note, saveAsBigChunk) {
   var _a;
-  if (!env.isTargetFile(env.id2path(note._id))) {
+  const filename = env.id2path(note._id, note);
+  if (!env.isTargetFile(filename)) {
     return false;
   }
+  const dispFilename = stripAllPrefixes(filename);
   const savedNotes = [];
   let processed = 0;
   let made = 0;
@@ -18986,7 +21846,7 @@ async function putDBEntry(env, note, saveAsBigChunk) {
   let cacheUsed = 0;
   const userPasswordHash = env.h32Raw(new TextEncoder().encode(env.settings.passphrase));
   const minimumChunkSize = env.settings.minimumChunkSize;
-  if (!saveAsBigChunk && shouldSplitAsPlainText(note._id)) {
+  if (!saveAsBigChunk && shouldSplitAsPlainText(filename)) {
     plainSplit = true;
   }
   const newLeafs = [];
@@ -19017,7 +21877,7 @@ async function putDBEntry(env, note, saveAsBigChunk) {
         Logger(`Hash collided! If possible, please report the following string
 A:--${currentDocPiece.get(leafId)}--
 B:--${piece}--`, LOG_LEVEL.NOTICE);
-        Logger(`This document could not be saved:${note._id}`, LOG_LEVEL.NOTICE);
+        Logger(`This document could not be saved:${dispFilename}`, LOG_LEVEL.NOTICE);
         saved = false;
       }
     } else {
@@ -19056,7 +21916,7 @@ B:--${piece}--`, LOG_LEVEL.NOTICE);
             Logger(`Hash collided on saving! If possible, please report the following string
 A:--${currentDocPiece.get(chunk.key)}--
 B:--${pieceData.data}--`, LOG_LEVEL.NOTICE);
-            Logger(`This document could not be saved:${note._id}`, LOG_LEVEL.NOTICE);
+            Logger(`This document could not be saved:${dispFilename}`, LOG_LEVEL.NOTICE);
             saved = false;
           }
         }
@@ -19072,7 +21932,7 @@ B:--${pieceData.data}--`, LOG_LEVEL.NOTICE);
           const pieceData = currentDocPiece.get(id);
           if (typeof pieceData === "undefined") {
             saved = false;
-            Logger(`Save failed.:id:${item.id} rev:${item.rev}`, LOG_LEVEL.NOTICE);
+            Logger(`Save failed.: ${dispFilename} (${item.id} rev:${item.rev})`, LOG_LEVEL.NOTICE);
             continue;
           }
           env.hashCaches.set(id, pieceData);
@@ -19081,7 +21941,7 @@ B:--${pieceData.data}--`, LOG_LEVEL.NOTICE);
           if ((item == null ? void 0 : item.status) == 409) {
             skipped++;
           } else {
-            Logger(`Save failed..:id:${item.id} rev:${item.rev}`, LOG_LEVEL.NOTICE);
+            Logger(`Save failed..: ${dispFilename} (${item.id} rev:${item.rev})`, LOG_LEVEL.NOTICE);
             Logger(item);
             saved = false;
           }
@@ -19094,16 +21954,17 @@ B:--${pieceData.data}--`, LOG_LEVEL.NOTICE);
     }
   }
   if (saved) {
-    Logger(`Content saved:${note._id} ,chunks: ${processed} (new:${made}, skip:${skipped}, cache:${cacheUsed})`);
+    Logger(`Content saved:${dispFilename} ,chunks: ${processed} (new:${made}, skip:${skipped}, cache:${cacheUsed})`);
     const newDoc = {
       children: savedNotes,
       _id: note._id,
+      path: note.path,
       ctime: note.ctime,
       mtime: note.mtime,
       size: note.size,
       type: note.datatype
     };
-    return (_a = await runWithLock("file:" + newDoc._id, false, async () => {
+    return (_a = await runWithLock("file:" + filename, false, async () => {
       try {
         const old = await env.localDatabase.get(newDoc._id);
         if (!old.type || old.type == "notes" || old.type == "newnote" || old.type == "plain") {
@@ -19126,7 +21987,7 @@ B:--${pieceData.data}--`, LOG_LEVEL.NOTICE);
       }
     })) != null ? _a : false;
   } else {
-    Logger(`note could not saved:${note._id}`);
+    Logger(`note could not saved:${dispFilename}`);
     return false;
   }
 }
@@ -19134,7 +21995,7 @@ async function getDBEntryMeta(env, path, opt, includeDeleted = false) {
   if (!env.isTargetFile(path)) {
     return false;
   }
-  const id = env.path2id(path);
+  const id = await env.path2id(path);
   try {
     let obj = null;
     if (opt) {
@@ -19159,6 +22020,7 @@ async function getDBEntryMeta(env, path, opt, includeDeleted = false) {
       const doc = {
         data: "",
         _id: note._id,
+        path,
         ctime: note.ctime,
         mtime: note.mtime,
         size: note.size,
@@ -19180,11 +22042,17 @@ async function getDBEntryMeta(env, path, opt, includeDeleted = false) {
   return false;
 }
 async function getDBEntryFromMeta(env, obj, opt, dump = false, waitForReady = true, includeDeleted = false) {
+  const filename = env.id2path(obj._id, obj);
+  if (!env.isTargetFile(filename)) {
+    return false;
+  }
+  const dispFilename = stripAllPrefixes(filename);
   const deleted = "deleted" in obj ? obj.deleted : void 0;
   if (!obj.type || obj.type && obj.type == "notes") {
     const note = obj;
     const doc = {
       data: note.data,
+      path: note.path,
       _id: note._id,
       ctime: note.ctime,
       mtime: note.mtime,
@@ -19212,58 +22080,66 @@ async function getDBEntryFromMeta(env, obj, opt, dump = false, waitForReady = tr
         Logger(obj);
       }
       let children2 = [];
-      if (env.settings.readChunksOnline) {
-        const items = await env.collectChunks(obj.children, false, waitForReady);
-        if (items) {
-          for (const v of items) {
-            if (v && v.type == "leaf") {
-              children2.push(v.data);
-            } else {
-              if (!opt) {
-                Logger(`Chunks of ${obj._id} are not valid.`, LOG_LEVEL.NOTICE);
-                env.corruptedEntries[obj._id] = obj;
+      const weight = Math.min(10, Math.ceil(obj.children.length / 10)) + 1;
+      const resourceSemaphore = env.settings.doNotPaceReplication ? () => {
+      } : await globalConcurrencyController.acquire(weight);
+      try {
+        if (env.settings.readChunksOnline) {
+          const items = await env.collectChunks(obj.children, false, waitForReady);
+          if (items) {
+            for (const v of items) {
+              if (v && v.type == "leaf") {
+                children2.push(v.data);
+              } else {
+                if (!opt) {
+                  Logger(`Chunks of ${dispFilename} (${obj._id}) are not valid.`, LOG_LEVEL.NOTICE);
+                  env.corruptedEntries[obj._id] = obj;
+                }
+                return false;
               }
-              return false;
-            }
-          }
-        } else {
-          if (opt) {
-            Logger(`Could not retrieve chunks of ${obj._id}. we have to `, LOG_LEVEL.NOTICE);
-          }
-          return false;
-        }
-      } else {
-        try {
-          if (waitForReady) {
-            children2 = await Promise.all(obj.children.map((e2) => env.getDBLeaf(e2, waitForReady)));
-            if (dump) {
-              Logger(`Chunks:`);
-              Logger(children2);
             }
           } else {
-            const chunkDocs = await env.localDatabase.allDocs({ keys: obj.children, include_docs: true });
-            if (chunkDocs.rows.some((e2) => "error" in e2)) {
-              const missingChunks = chunkDocs.rows.filter((e2) => "error" in e2).map((e2) => e2.id).join(", ");
-              Logger(`Could not retrieve chunks of ${obj._id}. Chunks are missing:${missingChunks}`, LOG_LEVEL.NOTICE);
-              return false;
+            if (opt) {
+              Logger(`Could not retrieve chunks of ${dispFilename} (${obj._id}). we have to `, LOG_LEVEL.NOTICE);
             }
-            if (chunkDocs.rows.some((e2) => e2.doc && e2.doc.type != "leaf")) {
-              const missingChunks = chunkDocs.rows.filter((e2) => e2.doc && e2.doc.type != "leaf").map((e2) => e2.id).join(", ");
-              Logger(`Could not retrieve chunks of ${obj._id}. corrupted chunks::${missingChunks}`, LOG_LEVEL.NOTICE);
-              return false;
-            }
-            children2 = chunkDocs.rows.map((e2) => e2.doc.data);
+            return false;
           }
-        } catch (ex) {
-          Logger(`Something went wrong on reading chunks of ${obj._id} from database, see verbose info for detail.`, LOG_LEVEL.NOTICE);
-          Logger(ex, LOG_LEVEL.VERBOSE);
-          env.corruptedEntries[obj._id] = obj;
-          return false;
+        } else {
+          try {
+            if (waitForReady) {
+              children2 = await Promise.all(obj.children.map((e2) => env.getDBLeaf(e2, waitForReady)));
+              if (dump) {
+                Logger(`Chunks:`);
+                Logger(children2);
+              }
+            } else {
+              const chunkDocs = await env.localDatabase.allDocs({ keys: obj.children, include_docs: true });
+              if (chunkDocs.rows.some((e2) => "error" in e2)) {
+                const missingChunks = chunkDocs.rows.filter((e2) => "error" in e2).map((e2) => e2.id).join(", ");
+                Logger(`Could not retrieve chunks of ${dispFilename}(${obj._id}). Chunks are missing:${missingChunks}`, LOG_LEVEL.NOTICE);
+                return false;
+              }
+              if (chunkDocs.rows.some((e2) => e2.doc && e2.doc.type != "leaf")) {
+                const missingChunks = chunkDocs.rows.filter((e2) => e2.doc && e2.doc.type != "leaf").map((e2) => e2.id).join(", ");
+                Logger(`Could not retrieve chunks of ${dispFilename}(${obj._id}). corrupted chunks::${missingChunks}`, LOG_LEVEL.NOTICE);
+                return false;
+              }
+              children2 = chunkDocs.rows.map((e2) => e2.doc.data);
+            }
+          } catch (ex) {
+            Logger(`Something went wrong on reading chunks of ${dispFilename}(${obj._id}) from database, see verbose info for detail.`, LOG_LEVEL.NOTICE);
+            Logger(ex, LOG_LEVEL.VERBOSE);
+            env.corruptedEntries[obj._id] = obj;
+            return false;
+          }
         }
+      } finally {
+        resourceSemaphore();
       }
       const data = children2;
       const doc = {
         data,
+        path: obj.path,
         _id: obj._id,
         ctime: obj.ctime,
         mtime: obj.mtime,
@@ -19285,10 +22161,10 @@ async function getDBEntryFromMeta(env, obj, opt, dump = false, waitForReady = tr
       return doc;
     } catch (ex) {
       if (isErrorOfMissingDoc(ex)) {
-        Logger(`Missing document content!, could not read ${obj._id} from database.`, LOG_LEVEL.NOTICE);
+        Logger(`Missing document content!, could not read ${dispFilename}(${obj._id}) from database.`, LOG_LEVEL.NOTICE);
         return false;
       }
-      Logger(`Something went wrong on reading ${obj._id} from database:`, LOG_LEVEL.NOTICE);
+      Logger(`Something went wrong on reading ${dispFilename}(${obj._id}) from database:`, LOG_LEVEL.NOTICE);
       Logger(ex);
     }
   }
@@ -19307,9 +22183,9 @@ async function deleteDBEntry(env, path, opt) {
   if (!env.isTargetFile(path)) {
     return false;
   }
-  const id = env.path2id(path);
+  const id = await env.path2id(path);
   try {
-    return (_a = await runWithLock("file:" + id, false, async () => {
+    return (_a = await runWithLock("file:" + path, false, async () => {
       let obj = null;
       if (opt) {
         obj = await env.localDatabase.get(id, opt);
@@ -19323,7 +22199,7 @@ async function deleteDBEntry(env, path, opt) {
       if (!obj.type || obj.type && obj.type == "notes") {
         obj._deleted = true;
         const r = await env.localDatabase.put(obj);
-        Logger(`entry removed:${obj._id}-${r.rev}`);
+        Logger(`Entry removed:${path} (${obj._id}-${r.rev})`);
         if (typeof env.corruptedEntries[obj._id] != "undefined") {
           delete env.corruptedEntries[obj._id];
         }
@@ -19340,7 +22216,7 @@ async function deleteDBEntry(env, path, opt) {
           }
         }
         const r = await env.localDatabase.put(obj);
-        Logger(`entry removed:${obj._id}-${r.rev}`);
+        Logger(`Entry removed:${path} (${obj._id}-${r.rev})`);
         if (typeof env.corruptedEntries[obj._id] != "undefined") {
           delete env.corruptedEntries[obj._id];
         }
@@ -19356,18 +22232,18 @@ async function deleteDBEntry(env, path, opt) {
     throw ex;
   }
 }
-async function deleteDBEntryPrefix(env, prefixSrc) {
+async function deleteDBEntryPrefix(env, prefix) {
   let c = 0;
   let readCount = 0;
   const delDocs = [];
-  const prefix = env.path2id(prefixSrc);
   do {
     const result = await env.localDatabase.allDocs({ include_docs: false, skip: c, limit: 100, conflicts: true });
     readCount = result.rows.length;
     if (readCount > 0) {
       for (const v of result.rows) {
-        if (v.id.startsWith(prefix) || v.id.startsWith("/" + prefix)) {
-          if (env.isTargetFile(env.id2path(v.id)))
+        const decodedPath = env.id2path(v.id, v.doc);
+        if (decodedPath.startsWith(prefix)) {
+          if (env.isTargetFile(decodedPath))
             delDocs.push(v.id);
         } else {
           if (!v.id.startsWith("h:")) {
@@ -19444,6 +22320,9 @@ async function ensureDatabaseIsCompatible(db, setting, deviceNodeID, currentVers
   }
   if (remoteMilestone.locked) {
     if (remoteMilestone.accepted_nodes.indexOf(deviceNodeID) == -1) {
+      if (remoteMilestone.cleaned) {
+        return "NODE_CLEANED";
+      }
       return "NODE_LOCKED";
     }
     return "LOCKED";
@@ -19455,11 +22334,9 @@ async function ensureDatabaseIsCompatible(db, setting, deviceNodeID, currentVers
 var LiveSyncLocalDB = class {
   constructor(dbname, env) {
     this.isReady = false;
-    this.hashCaches = new LRUCache(10, 10);
+    this.hashCaches = new LRUCache(10, 1e3);
     this.corruptedEntries = {};
     this.changeHandler = null;
-    this.leafArrivedCallbacks = {};
-    this.docSeq = "";
     this.chunkVersion = -1;
     this.maxChunkVersion = -1;
     this.minChunkVersion = -1;
@@ -19478,7 +22355,6 @@ var LiveSyncLocalDB = class {
   onunload() {
     var _a, _b;
     this.env.beforeOnUnload(this);
-    this.leafArrivedCallbacks;
     (_a = this.changeHandler) == null ? void 0 : _a.cancel();
     (_b = this.changeHandler) == null ? void 0 : _b.removeAllListeners();
     this.localDatabase.removeAllListeners();
@@ -19488,11 +22364,11 @@ var LiveSyncLocalDB = class {
     this.settings = settings;
     this.hashCaches = new LRUCache(settings.hashCacheMaxCount, settings.hashCacheMaxAmount);
   }
-  id2path(filename) {
-    return this.env.id2path(filename);
+  id2path(id, entry, stripPrefix2) {
+    return this.env.id2path(id, entry, stripPrefix2);
   }
-  path2id(filename) {
-    return this.env.path2id(filename);
+  async path2id(filename, prefix) {
+    return await this.env.path2id(filename, prefix);
   }
   async close() {
     var _a, _b;
@@ -19536,8 +22412,7 @@ var LiveSyncLocalDB = class {
     }).on("change", (e2) => {
       if (e2.deleted)
         return;
-      this.leafArrived(e2.id);
-      this.docSeq = `${e2.seq}`;
+      sendSignal(`leaf-${e2.id}`);
     });
     this.changeHandler = changes3;
     this.isReady = true;
@@ -19551,27 +22426,8 @@ var LiveSyncLocalDB = class {
     this.h32 = h32;
     this.h32Raw = h32Raw;
   }
-  leafArrived(id) {
-    if (typeof this.leafArrivedCallbacks[id] !== "undefined") {
-      for (const func of this.leafArrivedCallbacks[id]) {
-        func();
-      }
-      delete this.leafArrivedCallbacks[id];
-    }
-  }
-  waitForLeafReady(id) {
-    return new Promise((res2, rej) => {
-      const timer = setTimeout(() => rej(new Error(`Chunk reading timed out:${id}`)), LEAF_WAIT_TIMEOUT);
-      if (typeof this.leafArrivedCallbacks[id] == "undefined") {
-        this.leafArrivedCallbacks[id] = [];
-      }
-      this.leafArrivedCallbacks[id].push(() => {
-        clearTimeout(timer);
-        res2(true);
-      });
-    });
-  }
-  async getDBLeaf(id, waitForReady) {
+  async getDBLeafWithTimeout(id, limitTime) {
+    const now = Date.now();
     const leaf = this.hashCaches.revGet(id);
     if (leaf) {
       return leaf;
@@ -19582,22 +22438,22 @@ var LiveSyncLocalDB = class {
         this.hashCaches.set(id, w.data);
         return w.data;
       }
-      throw new Error(`Corrupted chunk detected: ${id}`);
+      throw new Error(`Corrupted chunk has been detected: ${id}`);
     } catch (ex) {
       if (isErrorOfMissingDoc(ex)) {
-        if (waitForReady) {
-          if (await this.waitForLeafReady(id) === false) {
-            throw new Error(`time out (waiting chunk)`);
-          }
-          return this.getDBLeaf(id, false);
-        } else {
-          throw new Error(`Chunk was not found: ${id}`);
+        if (limitTime < now) {
+          throw new Error("Could not read chunk: Timed out: ${id}");
         }
+        await waitForSignal(`leaf-${id}`, 5e3);
+        return this.getDBLeafWithTimeout(id, limitTime);
       } else {
         Logger(`Something went wrong while retrieving chunks`);
         throw ex;
       }
     }
+  }
+  getDBLeaf(id, waitForReady) {
+    return this.getDBLeafWithTimeout(id, waitForReady ? Date.now() + LEAF_WAIT_TIMEOUT : 0);
   }
   async getDBEntryMeta(path, opt, includeDeleted = false) {
     return getDBEntryMeta(this, path, opt, includeDeleted);
@@ -19658,6 +22514,8 @@ var LiveSyncLocalDB = class {
   }
   isTargetFile(filenameSrc) {
     const file = filenameSrc.startsWith("i:") ? filenameSrc.substring(2) : filenameSrc;
+    if (file.startsWith("ix:"))
+      return true;
     if (file.startsWith("ps:"))
       return true;
     if (file.includes(":"))
@@ -19686,6 +22544,11 @@ var LiveSyncLocalDB = class {
     }
   }
   async collectChunks(ids, showResult = false, waitForReady) {
+    const localChunks = await this.collectChunksWithCache(ids);
+    const missingChunks = localChunks.filter((e2) => !e2.chunk).map((e2) => e2.id);
+    if (missingChunks.length == 0) {
+      return localChunks.map((e2) => e2.chunk);
+    }
     const promises = ids.map((id) => new Promise((res3, rej) => {
       if (typeof this.chunkCollectedCallbacks[id] == "undefined") {
         this.chunkCollectedCallbacks[id] = { ok: [], failed: () => {
@@ -19711,7 +22574,7 @@ var LiveSyncLocalDB = class {
         if (requesting.length == 0)
           return;
         try {
-          const chunks = await this.CollectChunksInternal(requesting, false);
+          const chunks = await this.collectChunksInternal(requesting, false);
           if (chunks) {
             this.collectThrottleQueuedIds = this.collectThrottleQueuedIds.filter((e2) => !chunks.some((f3) => f3._id == e2));
             for (const chunk of chunks) {
@@ -19743,11 +22606,11 @@ var LiveSyncLocalDB = class {
     }).then(() => {
     });
   }
-  async CollectChunksInternal(ids, showResult = false) {
-    const localChunks = await this.localDatabase.allDocs({ keys: ids, include_docs: true });
-    const missingChunks = localChunks.rows.filter((e2) => "error" in e2).map((e2) => e2.key);
+  async collectChunksInternal(ids, showResult = false) {
+    const localChunks = await this.collectChunksWithCache(ids);
+    const missingChunks = localChunks.filter((e2) => !e2.chunk).map((e2) => e2.id);
     if (missingChunks.length == 0) {
-      return localChunks.rows.map((e2) => e2.doc);
+      return localChunks.map((e2) => e2.chunk);
     }
     const remoteDocs = await this.env.getReplicator().fetchRemoteChunks(missingChunks, showResult);
     if (remoteDocs == false) {
@@ -19769,17 +22632,19 @@ var LiveSyncLocalDB = class {
       }
       throw Error("Chunk collecting error");
     }
-    return localChunks.rows.map((e2) => "error" in e2 ? findChunk(e2.key) : e2.doc);
+    return localChunks.map((e2) => !e2.chunk ? findChunk(e2.id) : e2.chunk);
   }
   async *findEntries(startKey, endKey, opt) {
     const pageLimit = 100;
     let nextKey = startKey;
     do {
       const docs = await this.localDatabase.allDocs({ limit: pageLimit, startkey: nextKey, endkey: endKey, include_docs: true, ...opt });
-      nextKey = "";
+      if (docs.rows.length === 0) {
+        break;
+      }
+      nextKey = `${docs.rows[docs.rows.length - 1].id}\u{10FFFF}`;
       for (const row of docs.rows) {
         const doc = row.doc;
-        nextKey = `${row.id}\u{10FFFF}`;
         if (!("type" in doc))
           continue;
         if (doc.type == "newnote" || doc.type == "plain") {
@@ -19814,7 +22679,8 @@ var LiveSyncLocalDB = class {
     const targets = [
       this.findEntryNames("", "h:", opt != null ? opt : {}),
       this.findEntryNames(`h:\u{10FFFF}`, "i:", opt != null ? opt : {}),
-      this.findEntryNames(`i:\u{10FFFF}`, "ps:", opt != null ? opt : {}),
+      this.findEntryNames(`i:\u{10FFFF}`, "ix:", opt != null ? opt : {}),
+      this.findEntryNames(`xi:\u{10FFFF}`, "ps:", opt != null ? opt : {}),
       this.findEntryNames(`ps:\u{10FFFF}`, "", opt != null ? opt : {})
     ];
     for (const target of targets) {
@@ -19825,6 +22691,55 @@ var LiveSyncLocalDB = class {
           continue;
         yield f3;
       }
+    }
+  }
+  async *findAllNormalDocs(opt) {
+    const targets = [
+      this.findEntries("", "h:", opt != null ? opt : {}),
+      this.findEntries(`h:\u{10FFFF}`, "i:", opt != null ? opt : {}),
+      this.findEntries(`i:\u{10FFFF}`, "ix:", opt != null ? opt : {}),
+      this.findEntries(`ix:\u{10FFFF}`, "ps:", opt != null ? opt : {}),
+      this.findEntries(`ps:\u{10FFFF}`, "", opt != null ? opt : {})
+    ];
+    for (const target of targets) {
+      for await (const f3 of target) {
+        if (f3._id.startsWith("_"))
+          continue;
+        if (f3.type != "newnote" && f3.type != "plain")
+          continue;
+        yield f3;
+      }
+    }
+  }
+  getRaw(docId, options) {
+    return this.localDatabase.get(docId, options || {});
+  }
+  removeRaw(docId, revision, options) {
+    return this.localDatabase.remove(docId, revision, options || {});
+  }
+  putRaw(doc, options) {
+    return this.localDatabase.put(doc, options || {});
+  }
+  allDocsRaw(options) {
+    return this.localDatabase.allDocs(options);
+  }
+  bulkDocsRaw(docs, options) {
+    return this.localDatabase.bulkDocs(docs, options || {});
+  }
+  async collectChunksWithCache(keys2) {
+    const exists = keys2.map((e2) => this.hashCaches.has(e2) ? { id: e2, chunk: this.hashCaches.get(e2) } : { id: e2, chunk: false });
+    const notExists = exists.filter((e2) => e2.chunk === false);
+    if (notExists.length > 0) {
+      const chunks = await this.localDatabase.allDocs({ keys: notExists.map((e2) => e2.id), include_docs: true });
+      const existChunks = chunks.rows.filter((e2) => !("error" in e2)).map((e2) => e2.doc);
+      const temp = existChunks.reduce((p, c) => ({ ...p, [c._id]: c.data }), {});
+      for (const chunk of existChunks) {
+        this.hashCaches.set(chunk._id, chunk.data);
+      }
+      const ret = exists.map((e2) => ({ id: e2.id, chunk: e2.chunk !== false ? e2.chunk : e2.id in temp ? temp[e2.id] : false }));
+      return ret.map((e2) => ({ id: e2.id, chunk: e2.chunk !== false ? { _id: e2.id, data: e2.chunk, type: "leaf" } : false }));
+    } else {
+      return exists.map((e2) => ({ id: e2.id, chunk: { _id: e2.id, data: e2.chunk, type: "leaf" } }));
     }
   }
 };
@@ -19896,6 +22811,7 @@ var LiveSyncDBReplicator = class {
     this.originalSetting = null;
     this.nodeid = "";
     this.remoteLocked = false;
+    this.remoteCleaned = false;
     this.remoteLockedAndDeviceNotAccepted = false;
     this.updateInfo = () => {
       this.env.replicationStat.set({
@@ -20004,7 +22920,7 @@ var LiveSyncDBReplicator = class {
   replicationPaused() {
     this.syncStatus = "PAUSED";
     this.updateInfo();
-    Logger("replication paused", LOG_LEVEL.VERBOSE, "sync");
+    Logger("Replication paused", LOG_LEVEL.VERBOSE, "sync");
   }
   async processSync(syncHandler, showResult, docSentOnStart, docArrivedOnStart, syncMode, retrying) {
     const controller = new AbortController();
@@ -20015,6 +22931,12 @@ var LiveSyncDBReplicator = class {
     const gen = genReplication(syncHandler, controller.signal);
     try {
       for await (const [type, e2] of gen) {
+        const releaser = await globalConcurrencyController.tryAcquire(1, REPLICATION_BUSY_TIMEOUT);
+        if (releaser === false) {
+          Logger("Replication stopped for busy.", showResult ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO, "sync");
+          return "FAILED";
+        }
+        releaser();
         switch (type) {
           case "change":
             if ("direction" in e2) {
@@ -20087,14 +23009,14 @@ To solve the circumstance, configure the remote database correctly or we have to
   async openOneShotReplication(setting, showResult, retrying, syncMode) {
     if (this.controller != null) {
       Logger("Replication is already in progress.", showResult ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO, "sync");
-      return;
+      return false;
     }
     const localDB = this.env.getDatabase();
     Logger(`OneShot Sync begin... (${syncMode})`);
     const ret = await this.checkReplicationConnectivity(setting, true, retrying, showResult);
     if (ret === false) {
       Logger("Could not connect to server.", showResult ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO, "sync");
-      return;
+      return false;
     }
     this.maxPullSeq = Number(`${ret.info.update_seq}`.split("-")[0]);
     this.maxPushSeq = Number(`${(await localDB.info()).update_seq}`.split("-")[0]);
@@ -20164,9 +23086,9 @@ To solve the circumstance, configure the remote database correctly or we have to
       Logger("Another replication running.");
       return false;
     }
-    const dbRet = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile());
+    const dbRet = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile(), true);
     if (typeof dbRet === "string") {
-      Logger(`could not connect to ${uri}: ${dbRet}`, showResult ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO);
+      Logger(`Could not connect to ${uri}: ${dbRet}`, showResult ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO);
       return false;
     }
     if (!skipCheck) {
@@ -20175,17 +23097,26 @@ To solve the circumstance, configure the remote database correctly or we have to
         Logger("Remote database is newer or corrupted, make sure to latest version of self-hosted-livesync installed", LOG_LEVEL.NOTICE);
         return false;
       }
+      this.remoteCleaned = false;
+      this.remoteLocked = false;
+      this.remoteLockedAndDeviceNotAccepted = false;
       const ensure = await ensureDatabaseIsCompatible(dbRet.db, setting, this.nodeid, currentVersionRange);
       if (ensure == "INCOMPATIBLE") {
         Logger("The remote database has no compatibility with the running version. Please upgrade the plugin.", LOG_LEVEL.NOTICE);
         return false;
       } else if (ensure == "NODE_LOCKED") {
-        Logger("The remote database has been rebuilt or corrupted since we have synchronized last time. Fetch rebuilt DB or explicit unlocking is required. See the settings dialog.", LOG_LEVEL.NOTICE);
+        Logger("The remote database has been rebuilt or corrupted since we have synchronized last time. Fetch rebuilt DB, explicit unlocking or chunk clean-up is required.", LOG_LEVEL.NOTICE);
         this.remoteLockedAndDeviceNotAccepted = true;
         this.remoteLocked = true;
         return false;
       } else if (ensure == "LOCKED") {
         this.remoteLocked = true;
+      } else if (ensure == "NODE_CLEANED") {
+        Logger("The remote database has been cleaned up. Fetch rebuilt DB, explicit unlocking or chunk clean-up is required.", LOG_LEVEL.NOTICE);
+        this.remoteLockedAndDeviceNotAccepted = true;
+        this.remoteLocked = true;
+        this.remoteCleaned = true;
+        return false;
       }
     }
     const syncOptionBase = {
@@ -20216,7 +23147,7 @@ To solve the circumstance, configure the remote database correctly or we have to
       const ret = await this.checkReplicationConnectivity(setting, true, true, showResult);
       if (ret === false) {
         Logger("Could not connect to server.", showResult ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO);
-        return;
+        return false;
       }
       if (showResult) {
         Logger("Looking for the point last synchronized point.", LOG_LEVEL.NOTICE, "sync");
@@ -20279,7 +23210,7 @@ To solve the circumstance, configure the remote database correctly or we have to
   }
   async tryResetRemoteDatabase(setting) {
     this.closeReplication();
-    const con = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile());
+    const con = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile(), true);
     if (typeof con == "string")
       return;
     try {
@@ -20293,14 +23224,14 @@ To solve the circumstance, configure the remote database correctly or we have to
   }
   async tryCreateRemoteDatabase(setting) {
     this.closeReplication();
-    const con2 = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile());
+    const con2 = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile(), true);
     if (typeof con2 === "string")
       return;
     Logger("Remote Database Created or Connected", LOG_LEVEL.NOTICE);
   }
-  async markRemoteLocked(setting, locked) {
+  async markRemoteLocked(setting, locked, lockByClean) {
     const uri = setting.couchDB_URI + (setting.couchDB_DBNAME == "" ? "" : "/" + setting.couchDB_DBNAME);
-    const dbRet = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile());
+    const dbRet = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile(), true);
     if (typeof dbRet === "string") {
       Logger(`could not connect to ${uri}:${dbRet}`, LOG_LEVEL.NOTICE);
       return;
@@ -20314,6 +23245,7 @@ To solve the circumstance, configure the remote database correctly or we have to
       type: "milestoneinfo",
       created: new Date() / 1,
       locked,
+      cleaned: lockByClean,
       accepted_nodes: [this.nodeid],
       node_chunk_info: { [this.nodeid]: currentVersionRange }
     };
@@ -20321,6 +23253,7 @@ To solve the circumstance, configure the remote database correctly or we have to
     remoteMilestone.node_chunk_info = { ...defInitPoint.node_chunk_info, ...remoteMilestone.node_chunk_info };
     remoteMilestone.accepted_nodes = [this.nodeid];
     remoteMilestone.locked = locked;
+    remoteMilestone.cleaned = remoteMilestone.cleaned || lockByClean;
     if (locked) {
       Logger("Lock remote database to prevent data corruption", LOG_LEVEL.NOTICE);
     } else {
@@ -20330,7 +23263,7 @@ To solve the circumstance, configure the remote database correctly or we have to
   }
   async markRemoteResolved(setting) {
     const uri = setting.couchDB_URI + (setting.couchDB_DBNAME == "" ? "" : "/" + setting.couchDB_DBNAME);
-    const dbRet = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile());
+    const dbRet = await this.connectRemoteCouchDBWithSetting(setting, this.env.getIsMobile(), true);
     if (typeof dbRet === "string") {
       Logger(`could not connect to ${uri}:${dbRet}`, LOG_LEVEL.NOTICE);
       return;
@@ -20353,7 +23286,7 @@ To solve the circumstance, configure the remote database correctly or we have to
     Logger("Mark this device as 'resolved'.", LOG_LEVEL.NOTICE);
     await dbRet.db.put(remoteMilestone);
   }
-  connectRemoteCouchDBWithSetting(settings, isMobile) {
+  connectRemoteCouchDBWithSetting(settings, isMobile, performSetup, skipInfo) {
     if (settings.encrypt && settings.passphrase == "" && !settings.permitEmptyPassphrase) {
       return "Empty passphrases cannot be used without explicit permission";
     }
@@ -20365,11 +23298,13 @@ To solve the circumstance, configure the remote database correctly or we have to
       },
       settings.disableRequestURI || isMobile,
       settings.encrypt ? settings.passphrase : settings.encrypt,
-      settings.useDynamicIterationCount
+      settings.useDynamicIterationCount,
+      performSetup,
+      skipInfo
     );
   }
   async fetchRemoteChunks(missingChunks, showResult) {
-    const ret = await this.connectRemoteCouchDBWithSetting(this.env.getSettings(), this.env.getIsMobile());
+    const ret = await this.connectRemoteCouchDBWithSetting(this.env.getSettings(), this.env.getIsMobile(), false, true);
     if (typeof ret === "string") {
       Logger(`Could not connect to server.${ret} `, showResult ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO, "fetch");
       return false;
@@ -20641,686 +23576,11 @@ var OpenKeyValueDatabase = async (dbKey) => {
   };
 };
 
-// src/JsonResolvePane.svelte
-var import_diff_match_patch3 = __toESM(require_diff_match_patch(), 1);
-function add_css2(target) {
-  append_styles(target, "svelte-guf68w", ".deleted.svelte-guf68w{text-decoration:line-through}.svelte-guf68w{box-sizing:border-box}.scroller.svelte-guf68w{display:flex;flex-direction:column;overflow-y:scroll;max-height:60vh;user-select:text}.json-source.svelte-guf68w{white-space:pre;height:auto;overflow:auto;min-height:var(--font-ui-medium);flex-grow:1}");
-}
-function get_each_context2(ctx, list, i) {
-  const child_ctx = ctx.slice();
-  child_ctx[23] = list[i];
-  return child_ctx;
-}
-function get_each_context_12(ctx, list, i) {
-  const child_ctx = ctx.slice();
-  child_ctx[26] = list[i];
-  return child_ctx;
-}
-function create_else_block2(ctx) {
-  let div0;
-  let t0;
-  let t1;
-  let div1;
-  let t2;
-  let t3_value = revStringToRevNumber(ctx[0]._rev) + "";
-  let t3;
-  let t4;
-  let t5_value = new Date(ctx[0].mtime).toLocaleString() + "";
-  let t5;
-  let t6;
-  let t7_value = ctx[2].length + "";
-  let t7;
-  let t8;
-  let t9;
-  let div2;
-  let t10;
-  let t11_value = revStringToRevNumber(ctx[1]._rev) + "";
-  let t11;
-  let t12;
-  let t13_value = new Date(ctx[1].mtime).toLocaleString() + "";
-  let t13;
-  let t14;
-  let t15_value = ctx[3].length + "";
-  let t15;
-  let t16;
-  let t17;
-  let div3;
-  let button;
-  let mounted;
-  let dispose;
-  let each_value_1 = ctx[9];
-  let each_blocks = [];
-  for (let i = 0; i < each_value_1.length; i += 1) {
-    each_blocks[i] = create_each_block_12(get_each_context_12(ctx, each_value_1, i));
-  }
-  function select_block_type_1(ctx2, dirty) {
-    if (ctx2[5] != false)
-      return create_if_block_12;
-    return create_else_block_12;
-  }
-  let current_block_type = select_block_type_1(ctx, -1);
-  let if_block = current_block_type(ctx);
-  return {
-    c() {
-      div0 = element("div");
-      for (let i = 0; i < each_blocks.length; i += 1) {
-        each_blocks[i].c();
-      }
-      t0 = space();
-      if_block.c();
-      t1 = space();
-      div1 = element("div");
-      t2 = text("A Rev:");
-      t3 = text(t3_value);
-      t4 = text(" ,");
-      t5 = text(t5_value);
-      t6 = space();
-      t7 = text(t7_value);
-      t8 = text(" letters");
-      t9 = space();
-      div2 = element("div");
-      t10 = text("B Rev:");
-      t11 = text(t11_value);
-      t12 = text(" ,");
-      t13 = text(t13_value);
-      t14 = space();
-      t15 = text(t15_value);
-      t16 = text(" letters");
-      t17 = space();
-      div3 = element("div");
-      button = element("button");
-      button.textContent = "Apply";
-      attr(div0, "class", "options svelte-guf68w");
-      attr(div1, "class", "svelte-guf68w");
-      attr(div2, "class", "svelte-guf68w");
-      attr(button, "class", "svelte-guf68w");
-      attr(div3, "class", "buttons svelte-guf68w");
-    },
-    m(target, anchor) {
-      insert(target, div0, anchor);
-      for (let i = 0; i < each_blocks.length; i += 1) {
-        each_blocks[i].m(div0, null);
-      }
-      insert(target, t0, anchor);
-      if_block.m(target, anchor);
-      insert(target, t1, anchor);
-      insert(target, div1, anchor);
-      append(div1, t2);
-      append(div1, t3);
-      append(div1, t4);
-      append(div1, t5);
-      append(div1, t6);
-      append(div1, t7);
-      append(div1, t8);
-      insert(target, t9, anchor);
-      insert(target, div2, anchor);
-      append(div2, t10);
-      append(div2, t11);
-      append(div2, t12);
-      append(div2, t13);
-      append(div2, t14);
-      append(div2, t15);
-      append(div2, t16);
-      insert(target, t17, anchor);
-      insert(target, div3, anchor);
-      append(div3, button);
-      if (!mounted) {
-        dispose = listen(button, "click", ctx[10]);
-        mounted = true;
-      }
-    },
-    p(ctx2, dirty) {
-      if (dirty & 592) {
-        each_value_1 = ctx2[9];
-        let i;
-        for (i = 0; i < each_value_1.length; i += 1) {
-          const child_ctx = get_each_context_12(ctx2, each_value_1, i);
-          if (each_blocks[i]) {
-            each_blocks[i].p(child_ctx, dirty);
-          } else {
-            each_blocks[i] = create_each_block_12(child_ctx);
-            each_blocks[i].c();
-            each_blocks[i].m(div0, null);
-          }
-        }
-        for (; i < each_blocks.length; i += 1) {
-          each_blocks[i].d(1);
-        }
-        each_blocks.length = each_value_1.length;
-      }
-      if (current_block_type === (current_block_type = select_block_type_1(ctx2, dirty)) && if_block) {
-        if_block.p(ctx2, dirty);
-      } else {
-        if_block.d(1);
-        if_block = current_block_type(ctx2);
-        if (if_block) {
-          if_block.c();
-          if_block.m(t1.parentNode, t1);
-        }
-      }
-      if (dirty & 1 && t3_value !== (t3_value = revStringToRevNumber(ctx2[0]._rev) + ""))
-        set_data(t3, t3_value);
-      if (dirty & 1 && t5_value !== (t5_value = new Date(ctx2[0].mtime).toLocaleString() + ""))
-        set_data(t5, t5_value);
-      if (dirty & 4 && t7_value !== (t7_value = ctx2[2].length + ""))
-        set_data(t7, t7_value);
-      if (dirty & 2 && t11_value !== (t11_value = revStringToRevNumber(ctx2[1]._rev) + ""))
-        set_data(t11, t11_value);
-      if (dirty & 2 && t13_value !== (t13_value = new Date(ctx2[1].mtime).toLocaleString() + ""))
-        set_data(t13, t13_value);
-      if (dirty & 8 && t15_value !== (t15_value = ctx2[3].length + ""))
-        set_data(t15, t15_value);
-    },
-    d(detaching) {
-      if (detaching)
-        detach(div0);
-      destroy_each(each_blocks, detaching);
-      if (detaching)
-        detach(t0);
-      if_block.d(detaching);
-      if (detaching)
-        detach(t1);
-      if (detaching)
-        detach(div1);
-      if (detaching)
-        detach(t9);
-      if (detaching)
-        detach(div2);
-      if (detaching)
-        detach(t17);
-      if (detaching)
-        detach(div3);
-      mounted = false;
-      dispose();
-    }
-  };
-}
-function create_if_block2(ctx) {
-  let div0;
-  let t1;
-  let div1;
-  let button;
-  let mounted;
-  let dispose;
-  return {
-    c() {
-      div0 = element("div");
-      div0.textContent = "Just for a minute, please!";
-      t1 = space();
-      div1 = element("div");
-      button = element("button");
-      button.textContent = "Dismiss";
-      attr(div0, "class", "message svelte-guf68w");
-      attr(button, "class", "svelte-guf68w");
-      attr(div1, "class", "buttons svelte-guf68w");
-    },
-    m(target, anchor) {
-      insert(target, div0, anchor);
-      insert(target, t1, anchor);
-      insert(target, div1, anchor);
-      append(div1, button);
-      if (!mounted) {
-        dispose = listen(button, "click", ctx[10]);
-        mounted = true;
-      }
-    },
-    p: noop,
-    d(detaching) {
-      if (detaching)
-        detach(div0);
-      if (detaching)
-        detach(t1);
-      if (detaching)
-        detach(div1);
-      mounted = false;
-      dispose();
-    }
-  };
-}
-function create_if_block_22(ctx) {
-  let label;
-  let input;
-  let input_value_value;
-  let t0;
-  let div;
-  let t1_value = ctx[26][1] + "";
-  let t1;
-  let label_class_value;
-  let mounted;
-  let dispose;
-  return {
-    c() {
-      label = element("label");
-      input = element("input");
-      t0 = space();
-      div = element("div");
-      t1 = text(t1_value);
-      attr(input, "type", "radio");
-      attr(input, "name", "disp");
-      input.__value = input_value_value = ctx[26][0];
-      input.value = input.__value;
-      attr(input, "class", "sls-setting-tab svelte-guf68w");
-      ctx[19][0].push(input);
-      attr(div, "class", "sls-setting-menu-btn svelte-guf68w");
-      attr(label, "class", label_class_value = null_to_empty(`sls-setting-label ${ctx[26][0] == ctx[4] ? "selected" : ""}`) + " svelte-guf68w");
-    },
-    m(target, anchor) {
-      insert(target, label, anchor);
-      append(label, input);
-      input.checked = input.__value === ctx[4];
-      append(label, t0);
-      append(label, div);
-      append(div, t1);
-      if (!mounted) {
-        dispose = listen(input, "change", ctx[18]);
-        mounted = true;
-      }
-    },
-    p(ctx2, dirty) {
-      if (dirty & 16) {
-        input.checked = input.__value === ctx2[4];
-      }
-      if (dirty & 16 && label_class_value !== (label_class_value = null_to_empty(`sls-setting-label ${ctx2[26][0] == ctx2[4] ? "selected" : ""}`) + " svelte-guf68w")) {
-        attr(label, "class", label_class_value);
-      }
-    },
-    d(detaching) {
-      if (detaching)
-        detach(label);
-      ctx[19][0].splice(ctx[19][0].indexOf(input), 1);
-      mounted = false;
-      dispose();
-    }
-  };
-}
-function create_each_block_12(ctx) {
-  let if_block_anchor;
-  let if_block = (ctx[26][0] == "" || ctx[6][ctx[26][0]] != false) && create_if_block_22(ctx);
-  return {
-    c() {
-      if (if_block)
-        if_block.c();
-      if_block_anchor = empty();
-    },
-    m(target, anchor) {
-      if (if_block)
-        if_block.m(target, anchor);
-      insert(target, if_block_anchor, anchor);
-    },
-    p(ctx2, dirty) {
-      if (ctx2[26][0] == "" || ctx2[6][ctx2[26][0]] != false) {
-        if (if_block) {
-          if_block.p(ctx2, dirty);
-        } else {
-          if_block = create_if_block_22(ctx2);
-          if_block.c();
-          if_block.m(if_block_anchor.parentNode, if_block_anchor);
-        }
-      } else if (if_block) {
-        if_block.d(1);
-        if_block = null;
-      }
-    },
-    d(detaching) {
-      if (if_block)
-        if_block.d(detaching);
-      if (detaching)
-        detach(if_block_anchor);
-    }
-  };
-}
-function create_else_block_12(ctx) {
-  let t2;
-  return {
-    c() {
-      t2 = text("NO PREVIEW");
-    },
-    m(target, anchor) {
-      insert(target, t2, anchor);
-    },
-    p: noop,
-    d(detaching) {
-      if (detaching)
-        detach(t2);
-    }
-  };
-}
-function create_if_block_12(ctx) {
-  let div;
-  let each_value = ctx[7];
-  let each_blocks = [];
-  for (let i = 0; i < each_value.length; i += 1) {
-    each_blocks[i] = create_each_block2(get_each_context2(ctx, each_value, i));
-  }
-  return {
-    c() {
-      div = element("div");
-      for (let i = 0; i < each_blocks.length; i += 1) {
-        each_blocks[i].c();
-      }
-      attr(div, "class", "op-scrollable json-source svelte-guf68w");
-    },
-    m(target, anchor) {
-      insert(target, div, anchor);
-      for (let i = 0; i < each_blocks.length; i += 1) {
-        each_blocks[i].m(div, null);
-      }
-    },
-    p(ctx2, dirty) {
-      if (dirty & 128) {
-        each_value = ctx2[7];
-        let i;
-        for (i = 0; i < each_value.length; i += 1) {
-          const child_ctx = get_each_context2(ctx2, each_value, i);
-          if (each_blocks[i]) {
-            each_blocks[i].p(child_ctx, dirty);
-          } else {
-            each_blocks[i] = create_each_block2(child_ctx);
-            each_blocks[i].c();
-            each_blocks[i].m(div, null);
-          }
-        }
-        for (; i < each_blocks.length; i += 1) {
-          each_blocks[i].d(1);
-        }
-        each_blocks.length = each_value.length;
-      }
-    },
-    d(detaching) {
-      if (detaching)
-        detach(div);
-      destroy_each(each_blocks, detaching);
-    }
-  };
-}
-function create_each_block2(ctx) {
-  let span;
-  let t_value = ctx[23][1] + "";
-  let t2;
-  let span_class_value;
-  return {
-    c() {
-      span = element("span");
-      t2 = text(t_value);
-      attr(span, "class", span_class_value = null_to_empty(ctx[23][0] == import_diff_match_patch3.DIFF_DELETE ? "deleted" : ctx[23][0] == import_diff_match_patch3.DIFF_INSERT ? "added" : "normal") + " svelte-guf68w");
-    },
-    m(target, anchor) {
-      insert(target, span, anchor);
-      append(span, t2);
-    },
-    p(ctx2, dirty) {
-      if (dirty & 128 && t_value !== (t_value = ctx2[23][1] + ""))
-        set_data(t2, t_value);
-      if (dirty & 128 && span_class_value !== (span_class_value = null_to_empty(ctx2[23][0] == import_diff_match_patch3.DIFF_DELETE ? "deleted" : ctx2[23][0] == import_diff_match_patch3.DIFF_INSERT ? "added" : "normal") + " svelte-guf68w")) {
-        attr(span, "class", span_class_value);
-      }
-    },
-    d(detaching) {
-      if (detaching)
-        detach(span);
-    }
-  };
-}
-function create_fragment2(ctx) {
-  let h1;
-  let t1;
-  let div;
-  let span;
-  let t2;
-  let t3;
-  let if_block_anchor;
-  function select_block_type(ctx2, dirty) {
-    if (!ctx2[0] || !ctx2[1])
-      return create_if_block2;
-    return create_else_block2;
-  }
-  let current_block_type = select_block_type(ctx, -1);
-  let if_block = current_block_type(ctx);
-  return {
-    c() {
-      h1 = element("h1");
-      h1.textContent = "Conflicted settings";
-      t1 = space();
-      div = element("div");
-      span = element("span");
-      t2 = text(ctx[8]);
-      t3 = space();
-      if_block.c();
-      if_block_anchor = empty();
-      attr(h1, "class", "svelte-guf68w");
-      attr(span, "class", "svelte-guf68w");
-      attr(div, "class", "svelte-guf68w");
-    },
-    m(target, anchor) {
-      insert(target, h1, anchor);
-      insert(target, t1, anchor);
-      insert(target, div, anchor);
-      append(div, span);
-      append(span, t2);
-      insert(target, t3, anchor);
-      if_block.m(target, anchor);
-      insert(target, if_block_anchor, anchor);
-    },
-    p(ctx2, [dirty]) {
-      if (dirty & 256)
-        set_data(t2, ctx2[8]);
-      if (current_block_type === (current_block_type = select_block_type(ctx2, dirty)) && if_block) {
-        if_block.p(ctx2, dirty);
-      } else {
-        if_block.d(1);
-        if_block = current_block_type(ctx2);
-        if (if_block) {
-          if_block.c();
-          if_block.m(if_block_anchor.parentNode, if_block_anchor);
-        }
-      }
-    },
-    i: noop,
-    o: noop,
-    d(detaching) {
-      if (detaching)
-        detach(h1);
-      if (detaching)
-        detach(t1);
-      if (detaching)
-        detach(div);
-      if (detaching)
-        detach(t3);
-      if_block.d(detaching);
-      if (detaching)
-        detach(if_block_anchor);
-    }
-  };
-}
-function revStringToRevNumber(rev2) {
-  return rev2.split("-")[0];
-}
-function instance2($$self, $$props, $$invalidate) {
-  let mergedObjs;
-  let selectedObj;
-  let filename;
-  var _a;
-  let { docs = [] } = $$props;
-  let { callback = async (_, __) => {
-    Promise.resolve();
-  } } = $$props;
-  let docA = void 0;
-  let docB = void 0;
-  let docAContent = "";
-  let docBContent = "";
-  let objA = {};
-  let objB = {};
-  let objAB = {};
-  let objBA = {};
-  let diffs;
-  const modes = [["", "Not now"], ["A", "A"], ["B", "B"], ["AB", "A + B"], ["BA", "B + A"]];
-  let mode = "";
-  function docToString(doc) {
-    return doc.datatype == "plain" ? getDocData(doc.data) : base64ToString(doc.data);
-  }
-  function getDiff(left, right) {
-    const dmp = new import_diff_match_patch3.diff_match_patch();
-    const mapLeft = dmp.diff_linesToChars_(left, right);
-    const diffLeftSrc = dmp.diff_main(mapLeft.chars1, mapLeft.chars2, false);
-    dmp.diff_charsToLines_(diffLeftSrc, mapLeft.lineArray);
-    return diffLeftSrc;
-  }
-  function getJsonDiff(a2, b) {
-    return getDiff(JSON.stringify(a2, null, 2), JSON.stringify(b, null, 2));
-  }
-  function apply() {
-    if (mode == "A")
-      return callback(docA._rev, null);
-    if (mode == "B")
-      return callback(docB._rev, null);
-    if (mode == "BA")
-      return callback(null, JSON.stringify(objBA, null, 2));
-    if (mode == "AB")
-      return callback(null, JSON.stringify(objAB, null, 2));
-    callback(null, null);
-  }
-  const $$binding_groups = [[]];
-  function input_change_handler() {
-    mode = this.__value;
-    $$invalidate(4, mode);
-  }
-  $$self.$$set = ($$props2) => {
-    if ("docs" in $$props2)
-      $$invalidate(11, docs = $$props2.docs);
-    if ("callback" in $$props2)
-      $$invalidate(12, callback = $$props2.callback);
-  };
-  $$self.$$.update = () => {
-    if ($$self.$$.dirty & 247823) {
-      $: {
-        if (docs && docs.length >= 1) {
-          if (docs[0].mtime < docs[1].mtime) {
-            $$invalidate(0, docA = docs[0]);
-            $$invalidate(1, docB = docs[1]);
-          } else {
-            $$invalidate(0, docA = docs[1]);
-            $$invalidate(1, docB = docs[0]);
-          }
-          $$invalidate(2, docAContent = docToString(docA));
-          $$invalidate(3, docBContent = docToString(docB));
-          try {
-            $$invalidate(14, objA = false);
-            $$invalidate(15, objB = false);
-            $$invalidate(14, objA = JSON.parse(docAContent));
-            $$invalidate(15, objB = JSON.parse(docBContent));
-            $$invalidate(16, objAB = mergeObject(objA, objB));
-            $$invalidate(17, objBA = mergeObject(objB, objA));
-            if (JSON.stringify(objAB) == JSON.stringify(objBA)) {
-              $$invalidate(17, objBA = false);
-            }
-          } catch (ex) {
-            $$invalidate(17, objBA = false);
-            $$invalidate(16, objAB = false);
-          }
-        }
-      }
-    }
-    if ($$self.$$.dirty & 245760) {
-      $:
-        $$invalidate(6, mergedObjs = {
-          "": false,
-          A: objA,
-          B: objB,
-          AB: objAB,
-          BA: objBA
-        });
-    }
-    if ($$self.$$.dirty & 80) {
-      $:
-        $$invalidate(5, selectedObj = mode in mergedObjs ? mergedObjs[mode] : {});
-    }
-    if ($$self.$$.dirty & 16416) {
-      $: {
-        $$invalidate(7, diffs = getJsonDiff(objA, selectedObj));
-        console.dir(selectedObj);
-      }
-    }
-    if ($$self.$$.dirty & 8193) {
-      $:
-        $$invalidate(8, filename = id2path($$invalidate(13, _a = docA === null || docA === void 0 ? void 0 : docA._id) !== null && _a !== void 0 ? _a : ""));
-    }
-  };
-  return [
-    docA,
-    docB,
-    docAContent,
-    docBContent,
-    mode,
-    selectedObj,
-    mergedObjs,
-    diffs,
-    filename,
-    modes,
-    apply,
-    docs,
-    callback,
-    _a,
-    objA,
-    objB,
-    objAB,
-    objBA,
-    input_change_handler,
-    $$binding_groups
-  ];
-}
-var JsonResolvePane = class extends SvelteComponent {
-  constructor(options) {
-    super();
-    init2(this, options, instance2, create_fragment2, safe_not_equal, { docs: 11, callback: 12 }, add_css2);
-  }
-};
-var JsonResolvePane_default = JsonResolvePane;
-
-// src/JsonResolveModal.ts
-var JsonResolveModal = class extends import_obsidian.Modal {
-  constructor(app2, filename, docs, callback) {
-    super(app2);
-    this.callback = callback;
-    this.filename = filename;
-    this.docs = docs;
-  }
-  async UICallback(keepRev, mergedStr) {
-    this.close();
-    await this.callback(keepRev, mergedStr);
-    this.callback = null;
-  }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    if (this.component == null) {
-      this.component = new JsonResolvePane_default({
-        target: contentEl,
-        props: {
-          docs: this.docs,
-          callback: (keepRev, mergedStr) => this.UICallback(keepRev, mergedStr)
-        }
-      });
-    }
-    return;
-  }
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-    if (this.callback != null) {
-      this.callback(null);
-    }
-    if (this.component != null) {
-      this.component.$destroy();
-      this.component = null;
-    }
-  }
-};
-
 // src/CmdHiddenFileSync.ts
 var HiddenFileSync = class extends LiveSyncCommands {
   constructor() {
     super(...arguments);
-    this.periodicInternalFileScanProcessor = new PeriodicProcessor(this.plugin, async () => await this.syncInternalFilesAndDatabase("push", false));
+    this.periodicInternalFileScanProcessor = new PeriodicProcessor(this.plugin, async () => this.settings.syncInternalFiles && this.localDatabase.isReady && await this.syncInternalFilesAndDatabase("push", false));
     this.confirmPopup = null;
     this.procInternalFiles = [];
     this.recentProcessedInternalFiles = [];
@@ -21360,11 +23620,13 @@ var HiddenFileSync = class extends LiveSyncCommands {
     }
   }
   async beforeReplicate(showNotice) {
-    if (this.settings.syncInternalFiles && this.settings.syncInternalFilesBeforeReplication && !this.settings.watchInternalFileChanges) {
+    if (this.localDatabase.isReady && this.settings.syncInternalFiles && this.settings.syncInternalFilesBeforeReplication && !this.settings.watchInternalFileChanges) {
       await this.syncInternalFilesAndDatabase("push", showNotice);
     }
   }
   async onResume() {
+    var _a;
+    (_a = this.periodicInternalFileScanProcessor) == null ? void 0 : _a.disable();
     if (this.plugin.suspended)
       return;
     if (this.settings.syncInternalFiles) {
@@ -21378,11 +23640,15 @@ var HiddenFileSync = class extends LiveSyncCommands {
   realizeSettingSyncMode() {
     var _a;
     (_a = this.periodicInternalFileScanProcessor) == null ? void 0 : _a.disable();
+    if (this.plugin.suspended)
+      return;
+    if (!this.plugin.isReady)
+      return;
     this.periodicInternalFileScanProcessor.enable(this.settings.syncInternalFiles && this.settings.syncInternalFilesInterval ? this.settings.syncInternalFilesInterval * 1e3 : 0);
     return;
   }
   async execInternalFile() {
-    await runWithLock("execinternal", false, async () => {
+    await runWithLock("execInternal", false, async () => {
       const w = [...this.procInternalFiles];
       this.procInternalFiles = [];
       Logger(`Applying hidden ${w.length} files change...`);
@@ -21397,6 +23663,8 @@ var HiddenFileSync = class extends LiveSyncCommands {
     });
   }
   async watchVaultRawEventsAsync(path) {
+    if (!this.settings.syncInternalFiles)
+      return;
     const stat = await this.app.vault.adapter.stat(path);
     if (stat && stat.type != "file")
       return;
@@ -21406,8 +23674,8 @@ var HiddenFileSync = class extends LiveSyncCommands {
       return;
     }
     this.recentProcessedInternalFiles = [key, ...this.recentProcessedInternalFiles].slice(0, 100);
-    const id = filename2idInternalMetadata(path);
-    const filesOnDB = await this.localDatabase.getDBEntryMeta(id);
+    const prefixedFileName = addPrefix(path, ICHeader);
+    const filesOnDB = await this.localDatabase.getDBEntryMeta(prefixedFileName);
     const dbMTime = ~~((filesOnDB && filesOnDB.mtime || 0) / 1e3);
     if (dbMTime == storageMTime) {
       return;
@@ -21416,12 +23684,6 @@ var HiddenFileSync = class extends LiveSyncCommands {
       await this.deleteInternalFileOnDatabase(path);
     } else {
       await this.storeInternalFileToDatabase({ path, ...stat });
-      const pluginDir = this.app.vault.configDir + "/plugins/";
-      const pluginFiles = ["manifest.json", "data.json", "style.css", "main.js"];
-      if (path.startsWith(pluginDir) && pluginFiles.some((e2) => path.endsWith(e2)) && this.settings.usePluginSync) {
-        const pluginName = trimPrefix(path, pluginDir).split("/")[0];
-        await this.plugin.addOnPluginAndTheirSettings.sweepPlugin(false, pluginName);
-      }
     }
   }
   async resolveConflictOnInternalFiles() {
@@ -21430,31 +23692,32 @@ var HiddenFileSync = class extends LiveSyncCommands {
       if (!("_conflicts" in doc))
         continue;
       if (isInternalMetadata(doc._id)) {
-        await this.resolveConflictOnInternalFile(doc._id);
+        await this.resolveConflictOnInternalFile(doc.path);
       }
     }
   }
-  async resolveConflictOnInternalFile(id) {
+  async resolveConflictOnInternalFile(path) {
     var _a, _b;
     try {
-      const doc = await this.localDatabase.localDatabase.get(id, { conflicts: true });
+      const id = await this.path2id(path, ICHeader);
+      const doc = await this.localDatabase.getRaw(id, { conflicts: true });
       if (!("_conflicts" in doc))
         return false;
       if (doc._conflicts.length == 0)
         return false;
-      Logger(`Hidden file conflicted:${id2filenameInternalMetadata(id)}`);
+      Logger(`Hidden file conflicted:${path}`);
       const conflicts = doc._conflicts.sort((a2, b) => Number(a2.split("-")[0]) - Number(b.split("-")[0]));
       const revA = doc._rev;
       const revB = conflicts[0];
-      if (doc._id.endsWith(".json")) {
+      if (path.endsWith(".json")) {
         const conflictedRev = conflicts[0];
         const conflictedRevNo = Number(conflictedRev.split("-")[0]);
-        const revFrom = await this.localDatabase.localDatabase.get(id, { revs_info: true });
+        const revFrom = await this.localDatabase.getRaw(id, { revs_info: true });
         const commonBase = (_b = (_a = revFrom._revs_info.filter((e2) => e2.status == "available" && Number(e2.rev.split("-")[0]) < conflictedRevNo).first()) == null ? void 0 : _a.rev) != null ? _b : "";
-        const result = await this.plugin.mergeObject(id, commonBase, doc._rev, conflictedRev);
+        const result = await this.plugin.mergeObject(path, commonBase, doc._rev, conflictedRev);
         if (result) {
-          Logger(`Object merge:${id}`, LOG_LEVEL.INFO);
-          const filename = id2filenameInternalMetadata(id);
+          Logger(`Object merge:${path}`, LOG_LEVEL.INFO);
+          const filename = stripAllPrefixes(path);
           const isExists = await this.app.vault.adapter.exists(filename);
           if (!isExists) {
             await this.ensureDirectoryEx(filename);
@@ -21463,30 +23726,30 @@ var HiddenFileSync = class extends LiveSyncCommands {
           const stat = await this.app.vault.adapter.stat(filename);
           await this.storeInternalFileToDatabase({ path: filename, ...stat });
           await this.extractInternalFileFromDatabase(filename);
-          await this.localDatabase.localDatabase.remove(id, revB);
-          return this.resolveConflictOnInternalFile(id);
+          await this.localDatabase.removeRaw(id, revB);
+          return this.resolveConflictOnInternalFile(path);
         } else {
           Logger(`Object merge is not applicable.`, LOG_LEVEL.VERBOSE);
         }
-        const docAMerge = await this.localDatabase.getDBEntry(id, { rev: revA });
-        const docBMerge = await this.localDatabase.getDBEntry(id, { rev: revB });
+        const docAMerge = await this.localDatabase.getDBEntry(path, { rev: revA });
+        const docBMerge = await this.localDatabase.getDBEntry(path, { rev: revB });
         if (docAMerge != false && docBMerge != false) {
           if (await this.showJSONMergeDialogAndMerge(docAMerge, docBMerge)) {
             await delay(200);
-            return this.resolveConflictOnInternalFile(id);
+            return this.resolveConflictOnInternalFile(path);
           }
           return false;
         }
       }
-      const revBDoc = await this.localDatabase.localDatabase.get(id, { rev: revB });
+      const revBDoc = await this.localDatabase.getRaw(id, { rev: revB });
       const mtimeA = "mtime" in doc && doc.mtime || 0;
       const mtimeB = "mtime" in revBDoc && revBDoc.mtime || 0;
       const delRev = mtimeA < mtimeB ? revA : revB;
-      await this.localDatabase.localDatabase.remove(id, delRev);
-      Logger(`Older one has been deleted:${id2filenameInternalMetadata(id)}`);
-      return this.resolveConflictOnInternalFile(id);
+      await this.localDatabase.removeRaw(id, delRev);
+      Logger(`Older one has been deleted:${path}`);
+      return this.resolveConflictOnInternalFile(path);
     } catch (ex) {
-      Logger("Failed to resolve conflict (Hidden)");
+      Logger(`Failed to resolve conflict (Hidden): ${path}`);
       Logger(ex, LOG_LEVEL.VERBOSE);
       return false;
     }
@@ -21498,8 +23761,8 @@ var HiddenFileSync = class extends LiveSyncCommands {
     const ignorePatterns = this.settings.syncInternalFilesIgnorePatterns.replace(/\n| /g, "").split(",").filter((e2) => e2).map((e2) => new RegExp(e2, "i"));
     if (!files)
       files = await this.scanInternalFiles();
-    const filesOnDB = (await this.localDatabase.localDatabase.allDocs({ startkey: ICHeader, endkey: ICHeaderEnd, include_docs: true })).rows.map((e2) => e2.doc).filter((e2) => !e2.deleted);
-    const allFileNamesSrc = [.../* @__PURE__ */ new Set([...files.map((e2) => (0, import_obsidian.normalizePath)(e2.path)), ...filesOnDB.map((e2) => (0, import_obsidian.normalizePath)(id2path(id2filenameInternalMetadata(e2._id))))])];
+    const filesOnDB = (await this.localDatabase.allDocsRaw({ startkey: ICHeader, endkey: ICHeaderEnd, include_docs: true })).rows.map((e2) => e2.doc).filter((e2) => !e2.deleted);
+    const allFileNamesSrc = [.../* @__PURE__ */ new Set([...files.map((e2) => normalizePath(e2.path)), ...filesOnDB.map((e2) => stripAllPrefixes(this.getPath(e2)))])];
     const allFileNames = allFileNamesSrc.filter((filename) => !targetFiles || targetFiles && targetFiles.indexOf(filename) !== -1);
     function compareMTime(a2, b) {
       const wa = ~~(a2 / 1e3);
@@ -21518,7 +23781,7 @@ var HiddenFileSync = class extends LiveSyncCommands {
       filesChanged++;
       while (c) {
         pathPieces += (pathPieces != "" ? "/" : "") + c;
-        pathPieces = (0, import_obsidian.normalizePath)(pathPieces);
+        pathPieces = normalizePath(pathPieces);
         if (!(pathPieces in updatedFolders)) {
           updatedFolders[pathPieces] = 0;
         }
@@ -21526,74 +23789,75 @@ var HiddenFileSync = class extends LiveSyncCommands {
         c = pieces.shift();
       }
     };
-    const p = [];
-    const semaphore = Semaphore(10);
     let caches = {};
     caches = await this.kvDB.get("diff-caches-internal") || {};
+    const filesMap = files.reduce((acc, cur) => {
+      acc[cur.path] = cur;
+      return acc;
+    }, {});
+    const filesOnDBMap = filesOnDB.reduce((acc, cur) => {
+      acc[stripAllPrefixes(this.getPath(cur))] = cur;
+      return acc;
+    }, {});
+    const para = Parallels();
     for (const filename of allFileNames) {
       processed++;
-      if (processed % 100 == 0)
+      if (processed % 100 == 0) {
         Logger(`Hidden file: ${processed}/${fileCount}`, logLevel, "sync_internal");
+      }
+      if (!filename)
+        continue;
       if (ignorePatterns.some((e2) => filename.match(e2)))
         continue;
-      const fileOnStorage = files.find((e2) => e2.path == filename);
-      const fileOnDatabase = filesOnDB.find((e2) => e2._id == filename2idInternalMetadata(id2path(filename)));
-      const addProc = async (p2) => {
-        const releaser = await semaphore.acquire(1);
-        try {
-          return p2();
-        } catch (ex) {
-          Logger("Some process failed", logLevel);
-          Logger(ex);
-        } finally {
-          releaser();
-        }
-      };
+      const fileOnStorage = filename in filesMap ? filesMap[filename] : void 0;
+      const fileOnDatabase = filename in filesOnDBMap ? filesOnDBMap[filename] : void 0;
       const cache = filename in caches ? caches[filename] : { storageMtime: 0, docMtime: 0 };
-      p.push(addProc(async () => {
-        if (fileOnStorage && fileOnDatabase) {
-          if (fileOnDatabase.mtime == cache.docMtime && fileOnStorage.mtime == cache.storageMtime) {
+      await para.wait(5);
+      const proc = async (xFileOnStorage, xFileOnDatabase) => {
+        if (xFileOnStorage && xFileOnDatabase) {
+          if (direction != "pullForce" && direction != "pushForce" && xFileOnDatabase.mtime == cache.docMtime && xFileOnStorage.mtime == cache.storageMtime) {
             return;
           }
-          const nw = compareMTime(fileOnStorage.mtime, fileOnDatabase.mtime);
-          if (nw > 0) {
-            await this.storeInternalFileToDatabase(fileOnStorage);
+          const nw = compareMTime(xFileOnStorage.mtime, xFileOnDatabase.mtime);
+          if (nw > 0 || direction == "pushForce") {
+            await this.storeInternalFileToDatabase(xFileOnStorage);
           }
-          if (nw < 0) {
+          if (nw < 0 || direction == "pullForce") {
             if (!await this.extractInternalFileFromDatabase(filename))
               return;
           }
-          cache.docMtime = fileOnDatabase.mtime;
-          cache.storageMtime = fileOnStorage.mtime;
+          cache.docMtime = xFileOnDatabase.mtime;
+          cache.storageMtime = xFileOnStorage.mtime;
           caches[filename] = cache;
           countUpdatedFolder(filename);
-        } else if (!fileOnStorage && fileOnDatabase) {
-          if (direction == "push") {
-            if (fileOnDatabase.deleted)
+        } else if (!xFileOnStorage && xFileOnDatabase) {
+          if (direction == "push" || direction == "pushForce") {
+            if (xFileOnDatabase.deleted)
               return;
             await this.deleteInternalFileOnDatabase(filename, false);
-          } else if (direction == "pull") {
+          } else if (direction == "pull" || direction == "pullForce") {
             if (await this.extractInternalFileFromDatabase(filename)) {
               countUpdatedFolder(filename);
             }
           } else if (direction == "safe") {
-            if (fileOnDatabase.deleted)
+            if (xFileOnDatabase.deleted)
               return;
             if (await this.extractInternalFileFromDatabase(filename)) {
               countUpdatedFolder(filename);
             }
           }
-        } else if (fileOnStorage && !fileOnDatabase) {
-          await this.storeInternalFileToDatabase(fileOnStorage);
+        } else if (xFileOnStorage && !xFileOnDatabase) {
+          await this.storeInternalFileToDatabase(xFileOnStorage);
         } else {
           throw new Error("Invalid state on hidden file sync");
         }
-      }));
+      };
+      para.add(proc(fileOnStorage, fileOnDatabase));
     }
-    await Promise.all(p);
+    await para.all();
     await this.kvDB.set("diff-caches-internal", caches);
-    if (direction == "pull" && filesChanged != 0) {
-      const configDir = (0, import_obsidian.normalizePath)(this.app.vault.configDir);
+    if ((direction == "pull" || direction == "pullForce") && filesChanged != 0) {
+      const configDir = normalizePath(this.app.vault.configDir);
       if (configDir in updatedFolders) {
         let updatedCount = updatedFolders[configDir];
         try {
@@ -21676,7 +23940,8 @@ var HiddenFileSync = class extends LiveSyncCommands {
     Logger(`Hidden files scanned: ${filesChanged} files had been modified`, logLevel, "sync_internal");
   }
   async storeInternalFileToDatabase(file, forceWrite = false) {
-    const id = filename2idInternalMetadata(path2id(file.path));
+    const id = await this.path2id(file.path, ICHeader);
+    const prefixedFileName = addPrefix(file.path, ICHeader);
     const contentBin = await this.app.vault.adapter.readBinary(file.path);
     let content;
     try {
@@ -21687,13 +23952,14 @@ var HiddenFileSync = class extends LiveSyncCommands {
       return false;
     }
     const mtime = file.mtime;
-    return await runWithLock("file-" + id, false, async () => {
+    return await runWithLock("file-" + prefixedFileName, false, async () => {
       try {
-        const old = await this.localDatabase.getDBEntry(id, null, false, false);
+        const old = await this.localDatabase.getDBEntry(prefixedFileName, null, false, false);
         let saveData;
         if (old === false) {
           saveData = {
             _id: id,
+            path: prefixedFileName,
             data: content,
             mtime,
             ctime: mtime,
@@ -21729,15 +23995,17 @@ var HiddenFileSync = class extends LiveSyncCommands {
     });
   }
   async deleteInternalFileOnDatabase(filename, forceWrite = false) {
-    const id = filename2idInternalMetadata(path2id(filename));
+    const id = await this.path2id(filename, ICHeader);
+    const prefixedFileName = addPrefix(filename, ICHeader);
     const mtime = new Date().getTime();
-    await runWithLock("file-" + id, false, async () => {
+    await runWithLock("file-" + prefixedFileName, false, async () => {
       try {
-        const old = await this.localDatabase.getDBEntry(id, null, false, false);
+        const old = await this.localDatabase.getDBEntryMeta(prefixedFileName, null, true);
         let saveData;
         if (old === false) {
           saveData = {
             _id: id,
+            path: prefixedFileName,
             mtime,
             ctime: mtime,
             size: 0,
@@ -21759,7 +24027,7 @@ var HiddenFileSync = class extends LiveSyncCommands {
             type: "newnote"
           };
         }
-        await this.localDatabase.localDatabase.put(saveData);
+        await this.localDatabase.putRaw(saveData);
         Logger(`STORAGE -x> DB:${filename}: (hidden) Done`);
       } catch (ex) {
         Logger(`STORAGE -x> DB:${filename}: (hidden) Failed`);
@@ -21770,15 +24038,15 @@ var HiddenFileSync = class extends LiveSyncCommands {
   }
   async extractInternalFileFromDatabase(filename, force = false) {
     const isExists = await this.app.vault.adapter.exists(filename);
-    const id = filename2idInternalMetadata(path2id(filename));
-    return await runWithLock("file-" + id, false, async () => {
+    const prefixedFileName = addPrefix(filename, ICHeader);
+    return await runWithLock("file-" + prefixedFileName, false, async () => {
       var _a;
       try {
-        const fileOnDB = await this.localDatabase.getDBEntry(id, { conflicts: true }, false, false);
+        const fileOnDB = await this.localDatabase.getDBEntry(prefixedFileName, { conflicts: true }, false, true);
         if (fileOnDB === false)
-          throw new Error(`File not found on database.:${id}`);
+          throw new Error(`File not found on database.:${filename}`);
         if ((_a = fileOnDB == null ? void 0 : fileOnDB._conflicts) == null ? void 0 : _a.length) {
-          Logger(`Hidden file ${id} has conflicted revisions, to keep in safe, writing to storage has been prevented`, LOG_LEVEL.INFO);
+          Logger(`Hidden file ${filename} has conflicted revisions, to keep in safe, writing to storage has been prevented`, LOG_LEVEL.INFO);
           return;
         }
         const deleted = "deleted" in fileOnDB ? fileOnDB.deleted : false;
@@ -21832,20 +24100,23 @@ var HiddenFileSync = class extends LiveSyncCommands {
     });
   }
   showJSONMergeDialogAndMerge(docA, docB) {
-    return new Promise((res2) => {
+    return runWithLock("conflict:merge-data", false, () => new Promise((res2) => {
       Logger("Opening data-merging dialog", LOG_LEVEL.VERBOSE);
       const docs = [docA, docB];
-      const modal = new JsonResolveModal(this.app, id2path(docA._id), [docA, docB], async (keep, result) => {
+      const path = stripAllPrefixes(docA.path);
+      const modal = new JsonResolveModal(this.app, path, [docA, docB], async (keep, result) => {
         try {
-          const filename = id2filenameInternalMetadata(docA._id);
+          const filename = path;
           let needFlush = false;
           if (!result && !keep) {
             Logger(`Skipped merging: ${filename}`);
+            res2(false);
+            return;
           }
           if (result || keep) {
             for (const doc of docs) {
               if (doc._rev != keep) {
-                if (await this.localDatabase.deleteDBEntry(doc._id, { rev: doc._rev })) {
+                if (await this.localDatabase.deleteDBEntry(this.getPath(doc), { rev: doc._rev })) {
                   Logger(`Conflicted revision has been deleted: ${filename}`);
                   needFlush = true;
                 }
@@ -21880,7 +24151,7 @@ var HiddenFileSync = class extends LiveSyncCommands {
         }
       });
       modal.open();
-    });
+    }));
   }
   async scanInternalFiles() {
     const ignoreFilter = this.settings.syncInternalFilesIgnorePatterns.replace(/\n| /g, "").split(",").filter((e2) => e2).map((e2) => new RegExp(e2, "i"));
@@ -22016,6 +24287,8 @@ var SetupLiveSync = class extends LiveSyncCommands {
           const setupAsNew = "Set it up as secondary or subsequent device";
           const setupAgain = "Reconfigure and reconstitute the data";
           const setupManually = "Leave everything to me";
+          newSettingW.syncInternalFiles = false;
+          newSettingW.usePluginSync = false;
           const setupType = await askSelectString(this.app, "How would you like to set it up?", [setupAsNew, setupAgain, setupJustImport, setupManually]);
           if (setupType == setupJustImport) {
             this.plugin.settings = newSettingW;
@@ -22024,11 +24297,7 @@ var SetupLiveSync = class extends LiveSyncCommands {
           } else if (setupType == setupAsNew) {
             this.plugin.settings = newSettingW;
             this.plugin.usedPassphrase = "";
-            await this.plugin.saveSettings();
-            await this.plugin.resetLocalDatabase();
-            await this.plugin.localDatabase.initializeDatabase();
-            await this.plugin.markRemoteResolved();
-            await this.plugin.replicate(true);
+            await this.fetchLocal();
           } else if (setupType == setupAgain) {
             const confirm = "I know this operation will rebuild all my databases with files on this device, and files that are on the remote database and I didn't synchronize to any other devices will be lost and want to proceed indeed.";
             if (await askSelectString(this.app, "Do you really want to do this?", ["Cancel", confirm]) != confirm) {
@@ -22036,20 +24305,15 @@ var SetupLiveSync = class extends LiveSyncCommands {
             }
             this.plugin.settings = newSettingW;
             this.plugin.usedPassphrase = "";
-            await this.plugin.saveSettings();
-            await this.plugin.resetLocalDatabase();
-            await this.plugin.localDatabase.initializeDatabase();
-            await this.plugin.initializeDatabase(true);
-            await this.plugin.tryResetRemoteDatabase();
-            await this.plugin.markRemoteLocked();
-            await this.plugin.markRemoteResolved();
-            await this.plugin.replicate(true);
+            await this.rebuildEverything();
           } else if (setupType == setupManually) {
             const keepLocalDB = await askYesNo(this.app, "Keep local DB?");
             const keepRemoteDB = await askYesNo(this.app, "Keep remote DB?");
             if (keepLocalDB == "yes" && keepRemoteDB == "yes") {
               this.plugin.settings = newSettingW;
               this.plugin.usedPassphrase = "";
+              this.suspendAllSync();
+              this.suspendExtraSync();
               await this.plugin.saveSettings();
               const replicate2 = await askYesNo(this.app, "Unlock and replicate?");
               if (replicate2 == "yes") {
@@ -22104,6 +24368,159 @@ var SetupLiveSync = class extends LiveSyncCommands {
       Logger("Couldn't parse or decrypt configuration uri.", LOG_LEVEL.NOTICE);
     }
   }
+  suspendExtraSync() {
+    Logger("Hidden files and plugin synchronization have been temporarily disabled. Please enable them after the fetching, if you need them.", LOG_LEVEL.NOTICE);
+    this.plugin.settings.syncInternalFiles = false;
+    this.plugin.settings.usePluginSync = false;
+    this.plugin.settings.autoSweepPlugins = false;
+  }
+  async askHiddenFileConfiguration(opt) {
+    this.plugin.addOnSetup.suspendExtraSync();
+    const message = `Would you like to enable \`Hidden File Synchronization\` or \`Customization sync\`?
+${opt.enableFetch ? " - Fetch: Use files stored from other devices. \n" : ""}${opt.enableOverwrite ? "- Overwrite: Use files from this device. \n" : ""}- Custom: Synchronize only customization files with a dedicated interface.
+- Keep them disabled: Do not use hidden file synchronization.
+Of course, we are able to disable these features.`;
+    const CHOICE_FETCH = "Fetch";
+    const CHOICE_OVERWRITE = "Overwrite";
+    const CHOICE_CUSTOMIZE = "Custom";
+    const CHOICE_DISMISS = "keep them disabled";
+    const choices = [];
+    if (opt == null ? void 0 : opt.enableFetch) {
+      choices.push(CHOICE_FETCH);
+    }
+    if (opt == null ? void 0 : opt.enableOverwrite) {
+      choices.push(CHOICE_OVERWRITE);
+    }
+    choices.push(CHOICE_CUSTOMIZE);
+    choices.push(CHOICE_DISMISS);
+    const ret = await confirmWithMessage(this.plugin, "Hidden file sync", message, choices, CHOICE_DISMISS, 40);
+    if (ret == CHOICE_FETCH) {
+      await this.configureHiddenFileSync("FETCH");
+    } else if (ret == CHOICE_OVERWRITE) {
+      await this.configureHiddenFileSync("OVERWRITE");
+    } else if (ret == CHOICE_DISMISS) {
+      await this.configureHiddenFileSync("DISABLE");
+    } else if (ret == CHOICE_CUSTOMIZE) {
+      await this.configureHiddenFileSync("CUSTOMIZE");
+    }
+  }
+  async configureHiddenFileSync(mode) {
+    this.plugin.addOnSetup.suspendExtraSync();
+    if (mode == "DISABLE") {
+      this.plugin.settings.syncInternalFiles = false;
+      this.plugin.settings.usePluginSync = false;
+      await this.plugin.saveSettings();
+      return;
+    }
+    if (mode != "CUSTOMIZE") {
+      Logger("Gathering files for enabling Hidden File Sync", LOG_LEVEL.NOTICE);
+      if (mode == "FETCH") {
+        await this.plugin.addOnHiddenFileSync.syncInternalFilesAndDatabase("pullForce", true);
+      } else if (mode == "OVERWRITE") {
+        await this.plugin.addOnHiddenFileSync.syncInternalFilesAndDatabase("pushForce", true);
+      } else if (mode == "MERGE") {
+        await this.plugin.addOnHiddenFileSync.syncInternalFilesAndDatabase("safe", true);
+      }
+      this.plugin.settings.syncInternalFiles = true;
+      await this.plugin.saveSettings();
+      Logger(`Done! Restarting the app is strongly recommended!`, LOG_LEVEL.NOTICE);
+    } else if (mode == "CUSTOMIZE") {
+      if (!this.plugin.deviceAndVaultName) {
+        let name = await askString(this.app, "Device name", "Please set this device name", `desktop`);
+        if (!name) {
+          if (import_obsidian.Platform.isAndroidApp) {
+            name = "android-app";
+          } else if (import_obsidian.Platform.isIosApp) {
+            name = "ios";
+          } else if (import_obsidian.Platform.isMacOS) {
+            name = "macos";
+          } else if (import_obsidian.Platform.isMobileApp) {
+            name = "mobile-app";
+          } else if (import_obsidian.Platform.isMobile) {
+            name = "mobile";
+          } else if (import_obsidian.Platform.isSafari) {
+            name = "safari";
+          } else if (import_obsidian.Platform.isDesktop) {
+            name = "desktop";
+          } else if (import_obsidian.Platform.isDesktopApp) {
+            name = "desktop-app";
+          } else {
+            name = "unknown";
+          }
+          name = name + Math.random().toString(36).slice(-4);
+        }
+        this.plugin.deviceAndVaultName = name;
+      }
+      this.plugin.settings.usePluginSync = true;
+      await this.plugin.saveSettings();
+      await this.plugin.addOnConfigSync.scanAllConfigFiles(true);
+    }
+  }
+  suspendAllSync() {
+    this.plugin.settings.liveSync = false;
+    this.plugin.settings.periodicReplication = false;
+    this.plugin.settings.syncOnSave = false;
+    this.plugin.settings.syncOnStart = false;
+    this.plugin.settings.syncOnFileOpen = false;
+    this.plugin.settings.syncAfterMerge = false;
+  }
+  async askUseNewAdapter() {
+    if (!this.plugin.settings.useIndexedDBAdapter) {
+      const message = `Now this plugin has been configured to use the old database adapter for keeping compatibility. Do you want to deactivate it?`;
+      const CHOICE_YES = "Yes, disable and use latest";
+      const CHOICE_NO = "No, keep compatibility";
+      const choices = [CHOICE_YES, CHOICE_NO];
+      const ret = await confirmWithMessage(this.plugin, "Database adapter", message, choices, CHOICE_YES, 10);
+      if (ret == CHOICE_YES) {
+        this.plugin.settings.useIndexedDBAdapter = false;
+      }
+    }
+  }
+  async fetchLocal() {
+    this.suspendExtraSync();
+    this.askUseNewAdapter();
+    await this.plugin.realizeSettingSyncMode();
+    await this.plugin.resetLocalDatabase();
+    await delay(1e3);
+    await this.plugin.markRemoteResolved();
+    await this.plugin.openDatabase();
+    this.plugin.isReady = true;
+    await delay(500);
+    await this.plugin.replicateAllFromServer(true);
+    await delay(1e3);
+    await this.plugin.replicateAllFromServer(true);
+    await this.askHiddenFileConfiguration({ enableFetch: true });
+  }
+  async rebuildRemote() {
+    this.suspendExtraSync();
+    await this.plugin.realizeSettingSyncMode();
+    await this.plugin.markRemoteLocked();
+    await this.plugin.tryResetRemoteDatabase();
+    await this.plugin.markRemoteLocked();
+    await delay(500);
+    await this.askHiddenFileConfiguration({ enableOverwrite: true });
+    await delay(1e3);
+    await this.plugin.replicateAllToServer(true);
+    await delay(1e3);
+    await this.plugin.replicateAllToServer(true);
+  }
+  async rebuildEverything() {
+    this.suspendExtraSync();
+    this.askUseNewAdapter();
+    await this.plugin.realizeSettingSyncMode();
+    await this.plugin.resetLocalDatabase();
+    await delay(1e3);
+    await this.plugin.initializeDatabase(true);
+    await this.plugin.markRemoteLocked();
+    await this.plugin.tryResetRemoteDatabase();
+    await this.plugin.markRemoteLocked();
+    await delay(500);
+    await this.askHiddenFileConfiguration({ enableOverwrite: true });
+    await delay(1e3);
+    await this.plugin.replicateAllToServer(true);
+    await delay(1e3);
+    await this.plugin.replicateAllToServer(true);
+  }
 };
 
 // src/main.ts
@@ -22116,10 +24533,10 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     this.isReady = false;
     this.packageVersion = "";
     this.manifestVersion = "";
-    this.addOnPluginAndTheirSettings = new PluginAndTheirSettings(this);
     this.addOnHiddenFileSync = new HiddenFileSync(this);
     this.addOnSetup = new SetupLiveSync(this);
-    this.addOns = [this.addOnPluginAndTheirSettings, this.addOnHiddenFileSync, this.addOnSetup];
+    this.addOnConfigSync = new ConfigSync(this);
+    this.addOns = [this.addOnHiddenFileSync, this.addOnSetup, this.addOnConfigSync];
     this.periodicSyncProcessor = new PeriodicProcessor(this, async () => await this.replicate());
     this.last_successful_post = false;
     this.processReplication = (e2) => this.parseReplicationResult(e2);
@@ -22141,7 +24558,6 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     this.queuedFilesStore = getGlobalStore("queuedFiles", { queuedItems: [], fileEventItems: [] });
     this.chunkWaitTimeout = 6e4;
     this.lastMessage = "";
-    this.logHideTimer = null;
     this.conflictedCheckFiles = [];
   }
   getLastPostFailedBySize() {
@@ -22170,7 +24586,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
   getIsMobile() {
     return this.isMobile;
   }
-  async connectRemoteCouchDB(uri, auth, disableRequestURI, passphrase, useDynamicIterationCount) {
+  async connectRemoteCouchDB(uri, auth, disableRequestURI, passphrase, useDynamicIterationCount, performSetup, skipInfo) {
     if (!isValidRemoteCouchDBURI(uri))
       return "Remote URI is not valid";
     if (uri.toLowerCase() != uri)
@@ -22188,6 +24604,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     const conf = {
       adapter: "http",
       auth,
+      skip_setup: !performSetup,
       fetch: async (url, opts) => {
         var _a, _b;
         let size = "";
@@ -22265,6 +24682,9 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     if (passphrase !== "false" && typeof passphrase === "string") {
       enableEncryption(db, passphrase, useDynamicIterationCount);
     }
+    if (skipInfo) {
+      return { db, info: { db_name: "", doc_count: 0, update_seq: "" } };
+    }
     try {
       const info2 = await db.info();
       return { db, info: info2 };
@@ -22277,11 +24697,23 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       return msg;
     }
   }
-  id2path(filename) {
-    return id2path(filename);
+  id2path(id, entry, stripPrefix2) {
+    const tempId = id2path(id, entry);
+    if (stripPrefix2 && isInternalMetadata(tempId)) {
+      const out = stripInternalMetadataPrefix(tempId);
+      return out;
+    }
+    return tempId;
   }
-  path2id(filename) {
-    return path2id(filename);
+  getPath(entry) {
+    return getPath2(entry);
+  }
+  getPathWithoutPrefix(entry) {
+    return getPathWithoutPrefix(entry);
+  }
+  async path2id(filename, prefix) {
+    const destPath = addPrefix(filename, prefix);
+    return await path2id(destPath, this.settings.usePathObfuscation ? this.settings.passphrase : "");
   }
   createPouchDBInstance(name, options) {
     if (this.settings.useIndexedDBAdapter) {
@@ -22318,51 +24750,52 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     return timer;
   }
   isRedFlagRaised() {
-    const redflag = getAbstractFileByPath((0, import_obsidian.normalizePath)(FLAGMD_REDFLAG));
+    const redflag = getAbstractFileByPath(normalizePath(FLAGMD_REDFLAG));
     if (redflag != null) {
       return true;
     }
     return false;
   }
   isRedFlag2Raised() {
-    const redflag = getAbstractFileByPath((0, import_obsidian.normalizePath)(FLAGMD_REDFLAG2));
+    const redflag = getAbstractFileByPath(normalizePath(FLAGMD_REDFLAG2));
     if (redflag != null) {
       return true;
     }
     return false;
   }
   async deleteRedFlag2() {
-    const redflag = getAbstractFileByPath((0, import_obsidian.normalizePath)(FLAGMD_REDFLAG2));
+    const redflag = getAbstractFileByPath(normalizePath(FLAGMD_REDFLAG2));
     if (redflag != null) {
       await app.vault.delete(redflag, true);
     }
   }
   isRedFlag3Raised() {
-    const redflag = getAbstractFileByPath((0, import_obsidian.normalizePath)(FLAGMD_REDFLAG3));
+    const redflag = getAbstractFileByPath(normalizePath(FLAGMD_REDFLAG3));
     if (redflag != null) {
       return true;
     }
     return false;
   }
   async deleteRedFlag3() {
-    const redflag = getAbstractFileByPath((0, import_obsidian.normalizePath)(FLAGMD_REDFLAG3));
+    const redflag = getAbstractFileByPath(normalizePath(FLAGMD_REDFLAG3));
     if (redflag != null) {
       await app.vault.delete(redflag, true);
     }
   }
-  showHistory(file) {
-    new DocumentHistoryModal(this.app, this, file).open();
+  showHistory(file, id) {
+    new DocumentHistoryModal(this.app, this, file, id).open();
   }
   async fileHistory() {
     const notes = [];
     for await (const doc of this.localDatabase.findAllDocs()) {
-      notes.push({ path: id2path(doc._id), mtime: doc.mtime });
+      notes.push({ id: doc._id, path: this.getPath(doc), dispPath: this.getPathWithoutPrefix(doc), mtime: doc.mtime });
     }
     notes.sort((a2, b) => b.mtime - a2.mtime);
-    const notesList = notes.map((e2) => e2.path);
+    const notesList = notes.map((e2) => e2.dispPath);
     const target = await askSelectString(this.app, "File to view History", notesList);
     if (target) {
-      this.showHistory(target);
+      const targetId = notes.find((e2) => e2.dispPath == target);
+      this.showHistory(targetId.path, void 0);
     }
   }
   async pickFileForResolve() {
@@ -22370,17 +24803,18 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     for await (const doc of this.localDatabase.findAllDocs({ conflicts: true })) {
       if (!("_conflicts" in doc))
         continue;
-      notes.push({ path: id2path(doc._id), mtime: doc.mtime });
+      notes.push({ id: doc._id, path: this.getPath(doc), dispPath: this.getPathWithoutPrefix(doc), mtime: doc.mtime });
     }
     notes.sort((a2, b) => b.mtime - a2.mtime);
-    const notesList = notes.map((e2) => e2.path);
+    const notesList = notes.map((e2) => e2.dispPath);
     if (notesList.length == 0) {
       Logger("There are no conflicted documents", LOG_LEVEL.NOTICE);
       return false;
     }
     const target = await askSelectString(this.app, "File to view History", notesList);
     if (target) {
-      await this.resolveConflicted(target);
+      const targetItem = notes.find((e2) => e2.dispPath == target);
+      await this.resolveConflicted(targetItem.path);
       return true;
     }
     return false;
@@ -22404,7 +24838,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     for await (const doc of this.localDatabase.findAllDocs({ conflicts: true })) {
       if (doc.type == "newnote" || doc.type == "plain") {
         if (doc.deleted && doc.mtime - limit < 0) {
-          notes.push({ path: id2path(doc._id), mtime: doc.mtime, ttl: (doc.mtime - limit) / 1e3 / 86400, doc });
+          notes.push({ path: this.getPath(doc), mtime: doc.mtime, ttl: (doc.mtime - limit) / 1e3 / 86400, doc });
         }
       }
     }
@@ -22417,7 +24851,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       Logger(`Deletion history expired: ${v.path}`);
       const delDoc = v.doc;
       delDoc._deleted = true;
-      await this.localDatabase.localDatabase.put(delDoc);
+      await this.localDatabase.putRaw(delDoc);
     }
     Logger(`Checking expired file history done`);
   }
@@ -22430,25 +24864,13 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     try {
       if (this.isRedFlagRaised() || this.isRedFlag2Raised() || this.isRedFlag3Raised()) {
         this.settings.batchSave = false;
-        this.settings.liveSync = false;
-        this.settings.periodicReplication = false;
-        this.settings.syncOnSave = false;
-        this.settings.syncOnStart = false;
-        this.settings.syncOnFileOpen = false;
-        this.settings.syncAfterMerge = false;
-        this.settings.autoSweepPlugins = false;
-        this.settings.usePluginSync = false;
+        this.addOnSetup.suspendAllSync();
+        this.addOnSetup.suspendExtraSync();
         this.settings.suspendFileWatching = true;
-        this.settings.syncInternalFiles = false;
         await this.saveSettings();
         if (this.isRedFlag2Raised()) {
           Logger(`${FLAGMD_REDFLAG2} has been detected! Self-hosted LiveSync suspends all sync and rebuild everything.`, LOG_LEVEL.NOTICE);
-          await this.resetLocalDatabase();
-          await this.initializeDatabase(true);
-          await this.markRemoteLocked();
-          await this.tryResetRemoteDatabase();
-          await this.markRemoteLocked();
-          await this.replicateAllToServer(true);
+          await this.addOnSetup.rebuildEverything();
           await this.deleteRedFlag2();
           if (await askYesNo(this.app, "Do you want to disable Suspend file watching and restart obsidian now?") == "yes") {
             this.settings.suspendFileWatching = false;
@@ -22457,12 +24879,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
           }
         } else if (this.isRedFlag3Raised()) {
           Logger(`${FLAGMD_REDFLAG3} has been detected! Self-hosted LiveSync will discard the local database and fetch everything from the remote once again.`, LOG_LEVEL.NOTICE);
-          await this.resetLocalDatabase();
-          await delay(1e3);
-          await this.markRemoteResolved();
-          await this.openDatabase();
-          this.isReady = true;
-          await this.replicateAllFromServer(true);
+          await this.addOnSetup.fetchLocal();
           await this.deleteRedFlag3();
           if (await askYesNo(this.app, "Do you want to disable Suspend file watching and restart obsidian now?") == "yes") {
             this.settings.suspendFileWatching = false;
@@ -22502,7 +24919,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     for await (const doc of this.localDatabase.findAllDocs({ conflicts: true })) {
       if (!("_conflicts" in doc))
         continue;
-      notes.push({ path: id2path(doc._id), mtime: doc.mtime });
+      notes.push({ path: this.getPath(doc), mtime: doc.mtime });
     }
     if (notes.length > 0) {
       Logger(`Some files have been left conflicted! Please resolve them by "Pick a file to resolve conflict". The list is written in the log.`, LOG_LEVEL.NOTICE);
@@ -22517,8 +24934,8 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
   async onload() {
     logStore.subscribe((e2) => this.addLog(e2.message, e2.level, e2.key));
     Logger("loading plugin");
-    const manifestVersion = "0.17.34";
-    const packageVersion = "0.17.34";
+    const manifestVersion = "0.19.7";
+    const packageVersion = "0.19.7";
     this.manifestVersion = manifestVersion;
     this.packageVersion = packageVersion;
     Logger(`Self-hosted LiveSync v${manifestVersion} ${packageVersion} `);
@@ -22589,14 +25006,14 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       id: "livesync-dump",
       name: "Dump information of this doc ",
       editorCallback: (editor, view) => {
-        this.localDatabase.getDBEntry(view.file.path, {}, true, false);
+        this.localDatabase.getDBEntry(getPathFromTFile(view.file), {}, true, false);
       }
     });
     this.addCommand({
       id: "livesync-checkdoc-conflicted",
       name: "Resolve if conflicted.",
       editorCallback: async (editor, view) => {
-        await this.showIfConflicted(view.file.path);
+        await this.showIfConflicted(getPathFromTFile(view.file));
       }
     });
     this.addCommand({
@@ -22633,7 +25050,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       id: "livesync-history",
       name: "Show history",
       editorCallback: (editor, view) => {
-        this.showHistory(view.file);
+        this.showHistory(view.file, null);
       }
     });
     this.addCommand({
@@ -22890,7 +25307,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
   async procFileEvent(applyBatch) {
     if (!this.isReady)
       return;
-    if (this.settings.batchSave) {
+    if (this.settings.batchSave && !this.settings.liveSync) {
       if (!applyBatch && this.vaultManager.getQueueLength() < FileWatchEventQueueMax) {
         scheduleTask("applyBatchAuto", 3e4, () => {
           this.procFileEvent(true);
@@ -22909,10 +25326,17 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
         const file = queue2.args.file;
         const key = `file-last-proc-${queue2.type}-${file.path}`;
         const last = Number(await this.kvDB.get(key) || 0);
+        let mtime = file.mtime;
         if (queue2.type == "DELETE") {
           await this.deleteFromDBbyPath(file.path);
+          mtime = file.mtime - 1;
+          const keyD1 = `file-last-proc-CREATE-${file.path}`;
+          const keyD2 = `file-last-proc-CHANGED-${file.path}`;
+          await this.kvDB.set(keyD1, mtime);
+          await this.kvDB.set(keyD2, mtime);
         } else if (queue2.type == "INTERNAL") {
           await this.addOnHiddenFileSync.watchVaultRawEventsAsync(file.path);
+          await this.addOnConfigSync.watchVaultRawEventsAsync(file.path);
         } else {
           const targetFile = this.app.vault.getAbstractFileByPath(file.path);
           if (!(targetFile instanceof import_obsidian.TFile)) {
@@ -22925,6 +25349,8 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
           }
           const cache = queue2.args.cache;
           if (queue2.type == "CREATE" || queue2.type == "CHANGED") {
+            const keyD1 = `file-last-proc-DELETED-${file.path}`;
+            await this.kvDB.set(keyD1, mtime);
             if (!await this.updateIntoDB(targetFile, false, cache)) {
               Logger(`DB -> STORAGE: failed, cancel the relative operations: ${targetFile.path}`, LOG_LEVEL.INFO);
               this.vaultManager.cancelRelativeEvent(queue2);
@@ -22935,7 +25361,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
             await this.watchVaultRenameAsync(targetFile, queue2.args.oldPath);
           }
         }
-        await this.kvDB.set(key, file.mtime);
+        await this.kvDB.set(key, mtime);
       } while (this.vaultManager.getQueueLength() > 0);
       return true;
     });
@@ -22960,10 +25386,10 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     if (this.settings.syncOnFileOpen && !this.suspended) {
       await this.replicate();
     }
-    await this.showIfConflicted(file.path);
+    await this.showIfConflicted(getPathFromTFile(file));
   }
   async applyBatchChange() {
-    if (this.settings.batchSave) {
+    if (this.settings.batchSave && !this.settings.liveSync) {
       return await this.procFileEvent(true);
     }
   }
@@ -23008,17 +25434,18 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     const timestamp = now.toLocaleString();
     const messageContent = typeof message == "string" ? message : message instanceof Error ? `${message.name}:${message.message}` : JSON.stringify(message, null, 2);
     if (message instanceof Error) {
+      console.dir(message.stack);
     }
     const newMessage = timestamp + "->" + messageContent;
     console.log(vaultName + ":" + newMessage);
     if ((_a = this.settings) == null ? void 0 : _a.writeLogToTheFile) {
       const time = now.toISOString().split("T")[0];
       const logDate = `${PREFIXMD_LOGFILE}${time}.md`;
-      const file = this.app.vault.getAbstractFileByPath((0, import_obsidian.normalizePath)(logDate));
+      const file = this.app.vault.getAbstractFileByPath(normalizePath(logDate));
       if (!file) {
-        this.app.vault.adapter.append((0, import_obsidian.normalizePath)(logDate), "```\n");
+        this.app.vault.adapter.append(normalizePath(logDate), "```\n");
       }
-      this.app.vault.adapter.append((0, import_obsidian.normalizePath)(logDate), vaultName + ":" + newMessage + "\n");
+      this.app.vault.adapter.append(normalizePath(logDate), vaultName + ":" + newMessage + "\n");
     }
     logMessageStore.apply((e2) => [...e2, newMessage].slice(-100));
     this.setStatusBarText(null, messageContent);
@@ -23079,28 +25506,30 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
   async doc2storage(docEntry, file, force) {
     var _a;
     const mode = file == void 0 ? "create" : "modify";
-    const pathSrc = id2path(docEntry._id);
-    if (shouldBeIgnored(pathSrc)) {
+    const path = this.getPath(docEntry);
+    if (shouldBeIgnored(path)) {
       return;
     }
-    if (!this.isTargetFile(pathSrc))
+    if (!this.isTargetFile(path))
       return;
     if (docEntry._deleted || docEntry.deleted) {
-      const lastDocs = await this.localDatabase.getDBEntry(pathSrc);
+      const lastDocs = await this.localDatabase.getDBEntry(path);
+      if (path != file.path) {
+        Logger(`delete skipped: ${file.path} :Not exactly matched`, LOG_LEVEL.VERBOSE);
+      }
       if (lastDocs === false) {
         await this.deleteVaultItem(file);
       } else {
-        await this.pullFile(pathSrc, null, true);
-        Logger(`delete skipped:${lastDocs._id}`, LOG_LEVEL.VERBOSE);
+        await this.pullFile(path, null, true);
+        Logger(`delete skipped:${file.path}`, LOG_LEVEL.VERBOSE);
       }
       return;
     }
     const localMtime = ~~((((_a = file == null ? void 0 : file.stat) == null ? void 0 : _a.mtime) || 0) / 1e3);
     const docMtime = ~~(docEntry.mtime / 1e3);
-    const doc = await this.localDatabase.getDBEntry(pathSrc, { rev: docEntry._rev });
+    const doc = await this.localDatabase.getDBEntry(path, { rev: docEntry._rev });
     if (doc === false)
       return;
-    const path = id2path(doc._id);
     const msg = `DB -> STORAGE (${mode}${force ? ",force" : ""},${doc.datatype}) `;
     if (doc.datatype != "newnote" && doc.datatype != "plain") {
       Logger(msg + "ERROR, Invalid datatype: " + path + "(" + doc.datatype + ")", LOG_LEVEL.NOTICE);
@@ -23117,10 +25546,10 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     try {
       let outFile;
       if (mode == "create") {
-        outFile = await createFile((0, import_obsidian.normalizePath)(path), writeData, { ctime: doc.ctime, mtime: doc.mtime });
+        outFile = await createFile(normalizePath(path), writeData, { ctime: doc.ctime, mtime: doc.mtime });
       } else {
         await modifyFile(file, writeData, { ctime: doc.ctime, mtime: doc.mtime });
-        outFile = getAbstractFileByPath(file.path);
+        outFile = getAbstractFileByPath(getPathFromTFile(file));
       }
       Logger(msg + path);
       touch(outFile);
@@ -23152,7 +25581,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
   }
   handleDBChanged(change) {
     const af = app.workspace.getActiveFile();
-    if (af && af.path == id2path(change._id)) {
+    if (af && af.path == this.getPath(change)) {
       this.queuedEntries = this.queuedEntries.filter((e2) => e2._id != change._id);
       return this.handleDBChangedAsync(change);
     }
@@ -23169,17 +25598,18 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
         const entry = this.queuedEntries.shift();
         if (this.queuedEntries.some((e2) => e2._id == entry._id))
           continue;
+        const path = getPath2(entry);
         try {
           const releaser = await semaphore.acquire(1);
-          runWithLock(`dbchanged-${entry._id}`, false, async () => {
-            Logger(`Applying ${entry._id} (${entry._rev}) change...`, LOG_LEVEL.VERBOSE);
+          runWithLock(`dbchanged-${path}`, false, async () => {
+            Logger(`Applying ${path} (${entry._id}: ${entry._rev}) change...`, LOG_LEVEL.VERBOSE);
             await this.handleDBChangedAsync(entry);
-            Logger(`Applied ${entry._id} (${entry._rev}) change...`);
+            Logger(`Applied ${path} (${entry._id}:${entry._rev}) change...`);
           }).finally(() => {
             releaser();
           });
         } catch (ex) {
-          Logger(`Failed to apply the change of ${entry._id} (${entry._rev})`);
+          Logger(`Failed to apply the change of ${path} (${entry._id}:${entry._rev})`);
         }
       } while (this.queuedEntries.length > 0);
     } finally {
@@ -23187,7 +25617,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     }
   }
   async handleDBChangedAsync(change) {
-    const targetFile = getAbstractFileByPath(id2path(change._id));
+    const targetFile = getAbstractFileByPath(this.getPathWithoutPrefix(change));
     if (targetFile == null) {
       if (change._deleted || change.deleted) {
         return;
@@ -23214,17 +25644,17 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
         await this.doc2storage(doc, file);
         queueConflictCheck();
       } else {
-        const d = await this.localDatabase.getDBEntryMeta(id2path(change._id), { conflicts: true }, true);
+        const d = await this.localDatabase.getDBEntryMeta(this.getPath(change), { conflicts: true }, true);
         if (d && !d._conflicts) {
           await this.doc2storage(doc, file);
         } else {
           if (!queueConflictCheck()) {
-            Logger(`${id2path(change._id)} is conflicted, write to the storage has been pended.`, LOG_LEVEL.NOTICE);
+            Logger(`${this.getPath(change)} is conflicted, write to the storage has been pended.`, LOG_LEVEL.NOTICE);
           }
         }
       }
     } else {
-      Logger(`${id2path(change._id)} is already exist as the folder`);
+      Logger(`${this.getPath(change)} is already exist as the folder`);
     }
   }
   saveQueuedFiles() {
@@ -23235,7 +25665,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
   async loadQueuedFiles() {
     const lsKey = "obsidian-livesync-queuefiles-" + this.getVaultName();
     const ids = JSON.parse(localStorage.getItem(lsKey) || "[]");
-    const ret = await this.localDatabase.localDatabase.allDocs({ keys: ids, include_docs: true });
+    const ret = await this.localDatabase.allDocsRaw({ keys: ids, include_docs: true });
     for (const doc of ret.rows) {
       if (doc.doc && !this.queuedFiles.some((e2) => e2.entry._id == doc.doc._id)) {
         await this.parseIncomingDoc(doc.doc);
@@ -23251,9 +25681,9 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       if (queue2.missingChildren.length == 0) {
         queue2.done = true;
         if (isInternalMetadata(queue2.entry._id)) {
-          const filename = id2path(id2filenameInternalMetadata(queue2.entry._id));
+          const filename = this.getPathWithoutPrefix(queue2.entry);
           this.addOnHiddenFileSync.procInternalFile(filename);
-        } else if (isValidPath(id2path(queue2.entry._id))) {
+        } else if (isValidPath(this.getPath(queue2.entry))) {
           this.handleDBChanged(queue2.entry);
         } else {
           Logger(`Skipped: ${queue2.entry._id}`, LOG_LEVEL.VERBOSE);
@@ -23292,7 +25722,8 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       this.procQueuedFiles();
   }
   async parseIncomingDoc(doc) {
-    if (!this.isTargetFile(id2path(doc._id)))
+    const path = this.getPath(doc);
+    if (!this.isTargetFile(path))
       return;
     const skipOldFile = this.settings.skipOlderFilesOnSync && false;
     if (isInternalMetadata(doc._id) && !this.settings.syncInternalFiles)
@@ -23303,16 +25734,16 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       FLAGMD_REDFLAG2,
       FLAGMD_REDFLAG3
     ];
-    if (!isInternalMetadata(doc._id) && ignoreFiles.contains(id2path(doc._id))) {
+    if (!isInternalMetadata(doc._id) && ignoreFiles.contains(path)) {
       return;
     }
     if (!isInternalMetadata(doc._id) && skipOldFile) {
-      const info2 = getAbstractFileByPath(id2path(doc._id));
+      const info2 = getAbstractFileByPath(stripAllPrefixes(path));
       if (info2 && info2 instanceof import_obsidian.TFile) {
         const localMtime = ~~(info2.stat.mtime / 1e3);
         const docMtime = ~~(doc.mtime / 1e3);
         if (localMtime >= docMtime) {
-          Logger(`${doc._id} Skipped, older than storage.`, LOG_LEVEL.VERBOSE);
+          Logger(`${path} (${doc._id}, ${doc._rev}) Skipped, older than storage.`, LOG_LEVEL.VERBOSE);
           return;
         }
       }
@@ -23324,10 +25755,10 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       timeout: now + this.chunkWaitTimeout
     };
     if (!this.settings.readChunksOnline && "children" in doc) {
-      const c = await this.localDatabase.localDatabase.allDocs({ keys: doc.children, include_docs: false });
-      const missing = c.rows.filter((e2) => "error" in e2).map((e2) => e2.key);
+      const c = await this.localDatabase.collectChunksWithCache(doc.children);
+      const missing = c.filter((e2) => e2.chunk === false).map((e2) => e2.id);
       if (missing.length > 0)
-        Logger(`${doc._id}(${doc._rev}) Queued (waiting ${missing.length} items)`, LOG_LEVEL.VERBOSE);
+        Logger(`${path} (${doc._id}, ${doc._rev}) Queued (waiting ${missing.length} items)`, LOG_LEVEL.VERBOSE);
       newQueue.missingChildren = missing;
       this.queuedFiles.push(newQueue);
     } else {
@@ -23337,16 +25768,17 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     this.procQueuedFiles();
   }
   async parseReplicationResult(docs) {
+    const docsSorted = docs.sort((a2, b) => b.mtime - a2.mtime);
     L1:
-      for (const change of docs) {
+      for (const change of docsSorted) {
+        if (isChunk(change._id)) {
+          await this.parseIncomingChunk(change);
+          continue;
+        }
         for (const proc of this.addOns) {
           if (await proc.parseReplicationResultItem(change)) {
             continue L1;
           }
-        }
-        if (isChunk(change._id)) {
-          await this.parseIncomingChunk(change);
-          continue;
         }
         if (change._id == SYNCINFO_ID) {
           continue;
@@ -23416,16 +25848,18 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       }
       this.statusBar.title = e2.syncStatus;
       let waiting = "";
-      if (this.settings.batchSave) {
-        waiting = " " + "\u{1F6EB}".repeat(this.vaultManager.getQueueLength());
-        waiting = waiting.replace(/(🛫){10}/g, "\u{1F680}");
+      if (this.settings.batchSave && !this.settings.liveSync) {
+        const len = this.vaultManager.getQueueLength();
+        if (len != 0) {
+          waiting = ` \u{1F6EB}${len}`;
+        }
       }
       let queued = "";
       const queue2 = Object.entries(e2.queuedItems).filter((e3) => !e3[1].warned);
       const queuedCount = queue2.length;
       if (queuedCount) {
         const pieces = queue2.map((e3) => e3[1].missingChildren).reduce((prev, cur) => prev + cur.length, 0);
-        queued = ` \u{1F9E9} ${queuedCount} (${pieces})`;
+        queued = ` \u{1F9E9}${queuedCount} (${pieces})`;
       }
       const processes = e2.count;
       const processesDisp = processes == 0 ? "" : ` \u23F3${processes}`;
@@ -23437,14 +25871,16 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
         }
         return proc.substring(0, p);
       }
-      const pendingTask = e2.pending.length ? "\nPending: " + Object.entries(e2.pending.reduce((p, c) => {
+      const pendingTask = e2.pending.length ? e2.pending.length < 10 ? "\nPending: " + Object.entries(e2.pending.reduce((p, c) => {
         var _a;
         return { ...p, [getProcKind(c)]: ((_a = p[getProcKind(c)]) != null ? _a : 0) + 1 };
-      }, {})).map((e3) => `${e3[0]}${e3[1] == 1 ? "" : `(${e3[1]})`}`).join(", ") : "";
-      const runningTask = e2.running.length ? "\nRunning: " + Object.entries(e2.running.reduce((p, c) => {
+      }, {})).map((e3) => `${e3[0]}${e3[1] == 1 ? "" : `(${e3[1]})`}`).join(", ") : `
+ Pending: ${e2.pending.length}` : "";
+      const runningTask = e2.running.length ? e2.running.length < 10 ? "\nRunning: " + Object.entries(e2.running.reduce((p, c) => {
         var _a;
         return { ...p, [getProcKind(c)]: ((_a = p[getProcKind(c)]) != null ? _a : 0) + 1 };
-      }, {})).map((e3) => `${e3[0]}${e3[1] == 1 ? "" : `(${e3[1]})`}`).join(", ") : "";
+      }, {})).map((e3) => `${e3[0]}${e3[1] == 1 ? "" : `(${e3[1]})`}`).join(", ") : `
+ Running: ${e2.running.length}` : "";
       this.setStatusBarText(message + pendingTask + runningTask);
     });
   }
@@ -23457,20 +25893,19 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     const newMsg = typeof message == "string" ? message : this.lastMessage;
     const newLog = typeof log2 == "string" ? log2 : this.lastLog;
     if (`${this.lastMessage}-${this.lastLog}` != `${newMsg}-${newLog}`) {
-      this.statusBar.setText(newMsg.split("\n")[0]);
-      if (this.settings.showStatusOnEditor) {
-        const root = activeDocument.documentElement;
-        const q = root.querySelectorAll(`.CodeMirror-wrap,.cm-s-obsidian>.cm-editor,.canvas-wrapper`);
-        q.forEach((e2) => e2.setAttr("data-log", newMsg + "\n" + newLog));
-      } else {
-        const root = activeDocument.documentElement;
-        const q = root.querySelectorAll(`.CodeMirror-wrap,.cm-s-obsidian>.cm-editor,.canvas-wrapper`);
-        q.forEach((e2) => e2.setAttr("data-log", ""));
-      }
-      if (this.logHideTimer != null) {
-        clearTimeout(this.logHideTimer);
-      }
-      this.logHideTimer = setTimeout(() => this.setStatusBarText(null, ""), 3e3);
+      scheduleTask("update-display", 50, () => {
+        this.statusBar.setText(newMsg.split("\n")[0]);
+        if (this.settings.showStatusOnEditor) {
+          const root = activeDocument.documentElement;
+          const q = root.querySelectorAll(`.CodeMirror-wrap,.cm-s-obsidian>.cm-editor,.canvas-wrapper`);
+          q.forEach((e2) => e2.setAttr("data-log", newMsg + "\n" + newLog));
+        } else {
+          const root = activeDocument.documentElement;
+          const q = root.querySelectorAll(`.CodeMirror-wrap,.cm-s-obsidian>.cm-editor,.canvas-wrapper`);
+          q.forEach((e2) => e2.setAttr("data-log", ""));
+        }
+      }, true);
+      scheduleTask("log-hide", 3e3, () => this.setStatusBarText(null, ""));
       this.lastMessage = newMsg;
       this.lastLog = newLog;
     }
@@ -23487,7 +25922,42 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     await this.applyBatchChange();
     await Promise.all(this.addOns.map((e2) => e2.beforeReplicate(showMessage)));
     await this.loadQueuedFiles();
-    return await this.replicator.openReplication(this.settings, false, showMessage);
+    const ret = await this.replicator.openReplication(this.settings, false, showMessage);
+    if (!ret) {
+      if (this.replicator.remoteLockedAndDeviceNotAccepted) {
+        if (this.replicator.remoteCleaned) {
+          const message = `
+The remote database has been cleaned up.
+To synchronize, this device must also be cleaned up or fetch everything again once.
+Fetching may takes some time. Cleaning up is not stable yet but fast.
+`;
+          const CHOICE_CLEANUP = "Clean up";
+          const CHOICE_FETCH = "Fetch again";
+          const CHOICE_DISMISS = "Dismiss";
+          const ret2 = await confirmWithMessage(this, "Locked", message, [CHOICE_CLEANUP, CHOICE_FETCH, CHOICE_DISMISS], CHOICE_DISMISS, 10);
+          if (ret2 == CHOICE_CLEANUP) {
+            await localDatabaseCleanUp(this, true, false);
+            await balanceChunks(this, false);
+          }
+          if (ret2 == CHOICE_FETCH) {
+            await performRebuildDB(this, "localOnly");
+          }
+        } else {
+          const message = `
+The remote database has been rebuilt.
+To synchronize, this device must fetch everything again once.
+Or if you are sure know what had been happened, we can unlock the database from the setting dialog.
+                    `;
+          const CHOICE_FETCH = "Fetch again";
+          const CHOICE_DISMISS = "Dismiss";
+          const ret2 = await confirmWithMessage(this, "Locked", message, [CHOICE_FETCH, CHOICE_DISMISS], CHOICE_DISMISS, 10);
+          if (ret2 == CHOICE_FETCH) {
+            await performRebuildDB(this, "localOnly");
+          }
+        }
+      }
+    }
+    return ret;
   }
   async initializeDatabase(showingNotice, reopenDatabase = true) {
     this.isReady = false;
@@ -23515,11 +25985,11 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       return false;
     return await this.replicator.replicateAllFromServer(this.settings, showingNotice);
   }
-  async markRemoteLocked() {
-    return await this.replicator.markRemoteLocked(this.settings, true);
+  async markRemoteLocked(lockByClean) {
+    return await this.replicator.markRemoteLocked(this.settings, true, lockByClean);
   }
   async markRemoteUnlocked() {
-    return await this.replicator.markRemoteLocked(this.settings, false);
+    return await this.replicator.markRemoteLocked(this.settings, false, false);
   }
   async markRemoteResolved() {
     return await this.replicator.markRemoteResolved(this.settings);
@@ -23537,9 +26007,13 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     const filesStorageName = filesStorage.map((e2) => e2.path);
     Logger("Collecting local files on the DB", LOG_LEVEL.VERBOSE);
     const filesDatabase = [];
-    for await (const docId of this.localDatabase.findAllDocNames()) {
-      const path = id2path(docId);
-      if (isValidPath(docId) && this.isTargetFile(path)) {
+    let count = 0;
+    for await (const doc of this.localDatabase.findAllNormalDocs()) {
+      count++;
+      if (count % 25 == 0)
+        Logger(`Collecting local files on the DB: ${count}`, showingNotice ? LOG_LEVEL.NOTICE : LOG_LEVEL.INFO, "syncAll");
+      const path = getPath2(doc);
+      if (isValidPath(path) && this.isTargetFile(path)) {
         filesDatabase.push(path);
       }
     }
@@ -23549,7 +26023,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       initialScan = true;
       Logger("Database looks empty, save files as initial sync data");
     }
-    const onlyInStorage = filesStorage.filter((e2) => filesDatabase.indexOf(e2.path) == -1);
+    const onlyInStorage = filesStorage.filter((e2) => filesDatabase.indexOf(getPathFromTFile(e2)) == -1);
     const onlyInDatabase = filesDatabase.filter((e2) => filesStorageName.indexOf(e2) == -1);
     const onlyInStorageNames = onlyInStorage.map((e2) => e2.path);
     const syncFiles = filesStorage.filter((e2) => onlyInStorageNames.indexOf(e2.path) == -1);
@@ -23557,21 +26031,21 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     this.setStatusBarText(`UPDATE DATABASE`);
     const runAll = async (procedureName, objects, callback) => {
       Logger(procedureName);
-      const semaphore = Semaphore(25);
       if (!this.localDatabase.isReady)
         throw Error("Database is not ready!");
-      const processes = objects.map((e2) => (async (v) => {
-        const releaser = await semaphore.acquire(1, procedureName);
-        try {
-          await callback(v);
-        } catch (ex) {
-          Logger(`Error while ${procedureName}`, LOG_LEVEL.NOTICE);
-          Logger(ex);
-        } finally {
-          releaser();
-        }
-      })(e2));
-      await Promise.all(processes);
+      const para = Parallels();
+      for (const v of objects) {
+        await para.wait(10);
+        para.add((async (v2) => {
+          try {
+            await callback(v2);
+          } catch (ex) {
+            Logger(`Error while ${procedureName}`, LOG_LEVEL.NOTICE);
+            Logger(ex);
+          }
+        })(v));
+      }
+      await para.all();
       Logger(`${procedureName} done.`);
     };
     await runAll("UPDATE DATABASE", onlyInStorage, async (e2) => {
@@ -23597,9 +26071,15 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
       caches = await this.kvDB.get("diff-caches") || {};
       const docsCount = syncFiles.length;
       do {
-        const syncFilesX = syncFiles.splice(0, 100);
-        const docs = await this.localDatabase.localDatabase.allDocs({ keys: syncFilesX.map((e2) => path2id(e2.path)), include_docs: true });
-        const syncFilesToSync = syncFilesX.map((e2) => ({ file: e2, doc: docs.rows.find((ee) => ee.id == path2id(e2.path)).doc }));
+        const syncFilesXSrc = syncFiles.splice(0, 100);
+        const syncFilesX = [];
+        for (const file of syncFilesXSrc) {
+          const id = await this.path2id(getPathFromTFile(file));
+          syncFilesX.push({ file, id });
+        }
+        const docs = await this.localDatabase.allDocsRaw({ keys: syncFilesX.map((e2) => e2.id), include_docs: true });
+        const docsMap = docs.rows.reduce((p, c) => ({ ...p, [c.id]: c.doc }), {});
+        const syncFilesToSync = syncFilesX.map((e2) => ({ file: e2.file, doc: docsMap[e2.id] }));
         await runAll(`CHECK FILE STATUS:${syncFiles.length}/${docsCount}`, syncFilesToSync, async (e2) => {
           caches = await this.syncFileBetweenDBandStorage(e2.file, e2.doc, initialScan, caches);
         });
@@ -23836,7 +26316,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     if ((isSensibleMargeApplicable(path) || isObjectMargeApplicable(path)) && !this.settings.disableMarkdownAutoMerge) {
       const conflictedRev = conflicts[0];
       const conflictedRevNo = Number(conflictedRev.split("-")[0]);
-      const revFrom = await this.localDatabase.localDatabase.get(path2id(path), { revs_info: true });
+      const revFrom = await this.localDatabase.getRaw(await this.path2id(path), { revs_info: true });
       const commonBase = (_b = (_a = revFrom._revs_info.filter((e2) => e2.status == "available" && Number(e2.rev.split("-")[0]) < conflictedRevNo).first()) == null ? void 0 : _a.rev) != null ? _b : "";
       let p = void 0;
       if (commonBase) {
@@ -23859,7 +26339,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
         }
         if (p != void 0) {
           await this.localDatabase.deleteDBEntry(path, { rev: conflictedRev });
-          const file = getAbstractFileByPath(path);
+          const file = getAbstractFileByPath(stripAllPrefixes(path));
           if (file) {
             await this.app.vault.modify(file, p);
             await this.updateIntoDB(file);
@@ -23918,76 +26398,76 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     };
   }
   showMergeDialog(filename, conflictCheckResult) {
-    return new Promise((res2, rej) => {
-      Logger("open conflict dialog", LOG_LEVEL.VERBOSE);
-      new ConflictResolveModal(this.app, filename, conflictCheckResult, async (selected) => {
-        const testDoc = await this.localDatabase.getDBEntry(filename, { conflicts: true }, false, false, true);
-        if (testDoc === false) {
-          Logger("Missing file..", LOG_LEVEL.VERBOSE);
-          return res2(true);
-        }
-        if (!testDoc._conflicts) {
-          Logger("Nothing have to do with this conflict", LOG_LEVEL.VERBOSE);
-          return res2(true);
-        }
-        const toDelete = selected;
-        const toKeep = conflictCheckResult.left.rev != toDelete ? conflictCheckResult.left.rev : conflictCheckResult.right.rev;
-        if (toDelete == "") {
-          const p = conflictCheckResult.diff.map((e2) => e2[1]).join("");
-          await this.localDatabase.deleteDBEntry(filename, { rev: testDoc._conflicts[0] });
-          const file = getAbstractFileByPath(filename);
-          if (file) {
-            await this.app.vault.modify(file, p);
-            await this.updateIntoDB(file);
+    return runWithLock(
+      "resolve-conflict:" + filename,
+      false,
+      () => new Promise((res2, rej) => {
+        Logger("open conflict dialog", LOG_LEVEL.VERBOSE);
+        new ConflictResolveModal(this.app, filename, conflictCheckResult, async (selected) => {
+          const testDoc = await this.localDatabase.getDBEntry(filename, { conflicts: true }, false, false, true);
+          if (testDoc === false) {
+            Logger("Missing file..", LOG_LEVEL.VERBOSE);
+            return res2(true);
+          }
+          if (!testDoc._conflicts) {
+            Logger("Nothing have to do with this conflict", LOG_LEVEL.VERBOSE);
+            return res2(true);
+          }
+          const toDelete = selected;
+          const toKeep = conflictCheckResult.left.rev != toDelete ? conflictCheckResult.left.rev : conflictCheckResult.right.rev;
+          if (toDelete == "") {
+            const p = conflictCheckResult.diff.map((e2) => e2[1]).join("");
+            await this.localDatabase.deleteDBEntry(filename, { rev: testDoc._conflicts[0] });
+            const file = getAbstractFileByPath(stripAllPrefixes(filename));
+            if (file) {
+              await this.app.vault.modify(file, p);
+              await this.updateIntoDB(file);
+            } else {
+              const newFile = await this.app.vault.create(filename, p);
+              await this.updateIntoDB(newFile);
+            }
+            await this.pullFile(filename);
+            Logger("concat both file");
+            if (this.settings.syncAfterMerge && !this.suspended) {
+              await this.replicate();
+            }
+            setTimeout(() => {
+              this.showIfConflicted(filename);
+            }, 500);
+          } else if (toDelete == null) {
+            Logger("Leave it still conflicted");
           } else {
-            const newFile = await this.app.vault.create(filename, p);
-            await this.updateIntoDB(newFile);
+            await this.localDatabase.deleteDBEntry(filename, { rev: toDelete });
+            await this.pullFile(filename, null, true, toKeep);
+            Logger(`Conflict resolved:${filename}`);
+            if (this.settings.syncAfterMerge && !this.suspended) {
+              await this.replicate();
+            }
+            setTimeout(() => {
+              this.showIfConflicted(filename);
+            }, 500);
           }
-          await this.pullFile(filename);
-          Logger("concat both file");
-          if (this.settings.syncAfterMerge && !this.suspended) {
-            await this.replicate();
-          }
-          setTimeout(() => {
-            this.showIfConflicted(filename);
-          }, 500);
-        } else if (toDelete == null) {
-          Logger("Leave it still conflicted");
-        } else {
-          await this.localDatabase.deleteDBEntry(filename, { rev: toDelete });
-          await this.pullFile(filename, null, true, toKeep);
-          Logger(`Conflict resolved:${filename}`);
-          if (this.settings.syncAfterMerge && !this.suspended) {
-            await this.replicate();
-          }
-          setTimeout(() => {
-            this.showIfConflicted(filename);
-          }, 500);
-        }
-        return res2(true);
-      }).open();
-    });
+          return res2(true);
+        }).open();
+      })
+    );
   }
   queueConflictedCheck(file) {
     this.conflictedCheckFiles = this.conflictedCheckFiles.filter((e2) => e2 != file.path);
-    this.conflictedCheckFiles.push(file.path);
-    if (this.conflictedCheckTimer != null) {
-      window.clearTimeout(this.conflictedCheckTimer);
-    }
-    this.conflictedCheckTimer = window.setTimeout(async () => {
-      this.conflictedCheckTimer = null;
+    this.conflictedCheckFiles.push(getPathFromTFile(file));
+    scheduleTask("check-conflict", 100, async () => {
       const checkFiles = JSON.parse(JSON.stringify(this.conflictedCheckFiles));
       for (const filename of checkFiles) {
         try {
           const file2 = getAbstractFileByPath(filename);
           if (file2 != null && file2 instanceof import_obsidian.TFile) {
-            await this.showIfConflicted(file2.path);
+            await this.showIfConflicted(getPathFromTFile(file2));
           }
         } catch (ex) {
           Logger(ex);
         }
       }
-    }, 100);
+    });
   }
   async showIfConflicted(filename) {
     await runWithLock("conflicted", false, async () => {
@@ -24009,8 +26489,8 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     });
   }
   async pullFile(filename, fileList, force, rev2, waitForReady = true) {
-    const targetFile = getAbstractFileByPath(id2path(filename));
-    if (!this.isTargetFile(id2path(filename)))
+    const targetFile = getAbstractFileByPath(stripAllPrefixes(filename));
+    if (!this.isTargetFile(filename))
       return;
     if (targetFile == null) {
       const doc = await this.localDatabase.getDBEntry(filename, rev2 ? { rev: rev2 } : null, false, waitForReady);
@@ -24048,7 +26528,6 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     const dK = `${file.path}-diff`;
     const isLastDiff = dK in caches ? caches[dK] : { storageMtime: 0, docMtime: 0 };
     if (isLastDiff.docMtime == docMtime && isLastDiff.storageMtime == storageMtime) {
-      Logger("STORAGE .. DB :" + file.path, LOG_LEVEL.VERBOSE);
       caches[dK] = { storageMtime, docMtime };
       return caches;
     }
@@ -24061,7 +26540,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
     } else if (storageMtime < docMtime) {
       Logger("STORAGE <- DB :" + file.path);
       Logger(`${storageMtime} < ${docMtime}`);
-      const docx = await this.localDatabase.getDBEntry(file.path, null, false, false);
+      const docx = await this.localDatabase.getDBEntry(getPathFromTFile(file), null, false, false);
       if (docx != false) {
         await this.doc2storage(docx, file);
       } else {
@@ -24115,9 +26594,11 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
         datatype = "plain";
       }
     }
-    const fullPath = path2id(file.path);
+    const fullPath = getPathFromTFile(file);
+    const id = await this.path2id(fullPath);
     const d = {
-      _id: fullPath,
+      _id: id,
+      path: getPathFromTFile(file),
       data: content,
       ctime: file.stat.ctime,
       mtime: file.stat.mtime,
@@ -24166,7 +26647,7 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
   async deleteFromDB(file) {
     if (!this.isTargetFile(file))
       return;
-    const fullPath = file.path;
+    const fullPath = getPathFromTFile(file);
     Logger(`deleteDB By path:${fullPath}`);
     await this.deleteFromDBbyPath(fullPath);
     if (this.settings.syncOnSave && !this.suspended) {
@@ -24214,22 +26695,23 @@ var ObsidianLiveSyncPlugin = class extends import_obsidian.Plugin {
   async applyMTimeToFile(file) {
     await this.app.vault.adapter.append(file.path, "", { ctime: file.ctime, mtime: file.mtime });
   }
-  async resolveConflictByNewerEntry(id) {
-    const doc = await this.localDatabase.localDatabase.get(id, { conflicts: true });
+  async resolveConflictByNewerEntry(path) {
+    const id = await this.path2id(path);
+    const doc = await this.localDatabase.getRaw(id, { conflicts: true });
     if (!("_conflicts" in doc))
       return false;
     if (doc._conflicts.length == 0)
       return false;
-    Logger(`Hidden file conflicted:${id2filenameInternalMetadata(id)}`);
+    Logger(`Hidden file conflicted:${this.getPath(doc)}`);
     const conflicts = doc._conflicts.sort((a2, b) => Number(a2.split("-")[0]) - Number(b.split("-")[0]));
     const revA = doc._rev;
     const revB = conflicts[0];
-    const revBDoc = await this.localDatabase.localDatabase.get(id, { rev: revB });
+    const revBDoc = await this.localDatabase.getRaw(id, { rev: revB });
     const mtimeA = "mtime" in doc && doc.mtime || 0;
     const mtimeB = "mtime" in revBDoc && revBDoc.mtime || 0;
     const delRev = mtimeA < mtimeB ? revA : revB;
-    await this.localDatabase.localDatabase.remove(id, delRev);
-    Logger(`Older one has been deleted:${id2filenameInternalMetadata(id)}`);
+    await this.localDatabase.removeRaw(id, delRev);
+    Logger(`Older one has been deleted:${this.getPath(doc)}`);
     return true;
   }
   isTargetFile(file) {
