@@ -21,7 +21,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/02-Node.js的特点.md",
+                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md",
                 "mode": "source",
                 "source": false
               }
@@ -137,7 +137,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/02-Node.js的特点.md"
+                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md"
               }
             }
           },
@@ -173,7 +173,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/02-Node.js的特点.md",
+                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -190,7 +190,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/02-Node.js的特点.md",
+                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -224,6 +224,7 @@
   },
   "active": "f8ce5aa6afa0275a",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/11-Node.js/02-Node.js的特点.md",
     "knowledge accumulate/前端 Frontend System/15-TypeScript/02_TypeScript 变量的定义.md",
     "Excalidraw/Drawing 2023-04-28 11.18.57.excalidraw.md",
     "2023/06",
