@@ -21,7 +21,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
                 "mode": "source",
                 "source": false
               }
@@ -68,7 +68,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "",
+                "query": "unshit",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -93,7 +93,8 @@
               "state": {}
             }
           }
-        ]
+        ],
+        "currentTab": 1
       },
       {
         "id": "a7435c5622b4aa9d",
@@ -137,7 +138,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md"
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md"
               }
             }
           },
@@ -149,7 +150,8 @@
               "state": {}
             }
           }
-        ]
+        ],
+        "currentTab": 1
       },
       {
         "id": "a28ef51add4098f7",
@@ -173,7 +175,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -190,7 +192,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md",
+                "file": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -222,8 +224,13 @@
       "remotely-save:Remotely Save": false
     }
   },
-  "active": "f8ce5aa6afa0275a",
+  "active": "c1eaa7f234d6a05b",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/16-内置对象：Array-数组简介.md",
+    "knowledge accumulate/前端 Frontend System/04-JavaScript基础/04-基本数据类型：String 和 Boolean.md",
+    "knowledge accumulate/前端 Frontend System/05-JavaScript基础：ES6语法/08-字符串、数组、对象的扩展.md",
+    "knowledge accumulate/前端 Frontend System/05-JavaScript基础：ES6语法/07-剩余参数和扩展运算符.md",
+    "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md",
     "knowledge accumulate/前端 Frontend System/11-Node.js/02-Node.js的特点.md",
     "knowledge accumulate/前端 Frontend System/15-TypeScript/02_TypeScript 变量的定义.md",
     "Excalidraw/Drawing 2023-04-28 11.18.57.excalidraw.md",
@@ -260,9 +267,6 @@
     "knowledge accumulate/学科/Plans/attachments/Pasted image 20230222234358.png",
     "conflict-files-obsidian-git.md",
     "knowledge accumulate/前端 Frontend System/24-服务器学习/项目打包和自动化部署.md",
-    "knowledge accumulate/前端 Frontend System/24-服务器学习/项目搭建.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/10_VueRouter 路由（v4.x）.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/11_Vuex 状态管理（v4.x）.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/Vue3 源码简单学习.md"
+    "knowledge accumulate/前端 Frontend System/24-服务器学习/项目搭建.md"
   ]
 }

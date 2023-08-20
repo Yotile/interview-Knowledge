@@ -1,6 +1,26 @@
 {
   "recentFiles": [
     {
+      "basename": "13-内置对象： String-字符串的常见方法",
+      "path": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md"
+    },
+    {
+      "basename": "16-内置对象：Array-数组简介",
+      "path": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/16-内置对象：Array-数组简介.md"
+    },
+    {
+      "basename": "04-基本数据类型：String 和 Boolean",
+      "path": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/04-基本数据类型：String 和 Boolean.md"
+    },
+    {
+      "basename": "08-字符串、数组、对象的扩展",
+      "path": "knowledge accumulate/前端 Frontend System/05-JavaScript基础：ES6语法/08-字符串、数组、对象的扩展.md"
+    },
+    {
+      "basename": "07-剩余参数和扩展运算符",
+      "path": "knowledge accumulate/前端 Frontend System/05-JavaScript基础：ES6语法/07-剩余参数和扩展运算符.md"
+    },
+    {
       "basename": "事件驱动和非阻塞机制",
       "path": "knowledge accumulate/前端 Frontend System/11-Node.js/事件驱动和非阻塞机制.md"
     },
@@ -151,10 +171,6 @@
     {
       "basename": "04735 数据库系统原理",
       "path": "knowledge accumulate/学科/04735 数据库系统原理/04735 数据库系统原理.md"
-    },
-    {
-      "basename": "13-内置对象： String-字符串的常见方法",
-      "path": "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md"
     },
     {
       "basename": "README",
