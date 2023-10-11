@@ -30,12 +30,6 @@
       "mode": "any"
     },
     {
-      "id": "ob-table-enhancer:insert2x2table",
-      "icon": "table",
-      "name": "Table Enhancer: Insert 2x2 table",
-      "mode": "any"
-    },
-    {
       "id": "obsidian-mind-map:app:markmap-preview",
       "icon": "align-vertical-distribute-center",
       "name": "Mind Map: Preview the current note as a Mind Map",
@@ -45,6 +39,12 @@
       "id": "remotely-save:start-sync-dry-run",
       "icon": "upload-cloud",
       "name": "Remotely Save: 开始同步（空跑模式）（start sync (dry run only)）",
+      "mode": "any"
+    },
+    {
+      "id": "obsidian-table-generator:create-table-genertator",
+      "icon": "table",
+      "name": "Table Generator: Create Table Generator",
       "mode": "any"
     }
   ],

@@ -114,7 +114,7 @@ console.log(result); // 打印结果：9
 
 ### indexOf 举例
 
-　　**案例**：查找<font color="#2DC26B">字符串</font>"qianguyihao"中，所有 `a` 出现的位置以及次数。
+　　**案例**：查找字符串"qianguyihao"中，所有 `a` 出现的位置以及次数。
 
 　　思路：
 
