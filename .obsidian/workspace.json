@@ -48,7 +48,7 @@
             }
           }
         ],
-        "currentTab": 3
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -78,7 +78,7 @@
             "state": {
               "type": "search",
               "state": {
-                "query": "unshit",
+                "query": "",
                 "matchingCase": false,
                 "explainSearch": false,
                 "collapseAll": false,
@@ -103,8 +103,7 @@
               "state": {}
             }
           }
-        ],
-        "currentTab": 1
+        ]
       },
       {
         "id": "a7435c5622b4aa9d",
@@ -216,8 +215,6 @@
   },
   "left-ribbon": {
     "hiddenItems": {
-      "obsidian-custom-frames:Open open flomo": false,
-      "obsidian-custom-frames:Open Notion": false,
       "switcher:打开快速切换": false,
       "canvas:新建白板": false,
       "graph:查看关系图谱": false,
@@ -227,14 +224,16 @@
       "random-note:开始漫游笔记": false,
       "audio-recorder:开始/结束录音": false,
       "workspaces:管理工作区布局": true,
-      "obsidian-excalidraw-plugin:新建 Excalidraw 绘图": false,
-      "obsidian42-brat:BRAT": true,
-      "obsidian-weread-plugin:Weread": false,
+      "obsidian42-brat:BRAT": false,
       "cmdr:Kanban: 创建新看板": false,
-      "remotely-save:Remotely Save": false
+      "remotely-save:Remotely Save": false,
+      "obsidian-excalidraw-plugin:新建 Excalidraw 绘图": false,
+      "obsidian-weread-plugin:Weread": false,
+      "obsidian-custom-frames:Open Notion": false,
+      "obsidian-custom-frames:Open open flomo": false
     }
   },
-  "active": "06212bb098478126",
+  "active": "751705b49af648cb",
   "lastOpenFiles": [
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/16-内置对象：Array-数组简介.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/04-基本数据类型：String 和 Boolean.md",
