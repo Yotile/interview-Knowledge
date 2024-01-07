@@ -20,6 +20,26 @@
             }
           },
           {
+            "id": "bfbc76b134b4d1f5",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.4.16"
+              }
+            }
+          },
+          {
+            "id": "abfa43fbaceb9efd",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.5.3"
+              }
+            }
+          },
+          {
             "id": "22b5b5c0701fe8e0",
             "type": "leaf",
             "state": {
@@ -39,7 +59,8 @@
               }
             }
           }
-        ]
+        ],
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -149,6 +170,18 @@
               "type": "quiet-outline",
               "state": {}
             }
+          },
+          {
+            "id": "e693064d37c18c15",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              }
+            }
           }
         ],
         "currentTab": 1
@@ -225,7 +258,7 @@
       "obsidian-custom-frames:Open open flomo": false
     }
   },
-  "active": "59c29d640afd6679",
+  "active": "abfa43fbaceb9efd",
   "lastOpenFiles": [
     "knowledge accumulate/前端 Frontend System/24-服务器学习/项目打包和自动化部署.md",
     "knowledge accumulate/学科/04741 计算机网络原理/04741 计算机网络原理.md",
