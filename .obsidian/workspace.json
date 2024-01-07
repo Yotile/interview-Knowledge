@@ -13,7 +13,7 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "knowledge accumulate/学科/04741 计算机网络原理/04741 计算机网络原理.md",
+                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
                 "mode": "source",
                 "source": false
               }
@@ -113,8 +113,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 260,
-    "collapsed": true
+    "width": 260
   },
   "right": {
     "id": "d0a74a4d6e82c405",
@@ -139,7 +138,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/学科/04741 计算机网络原理/04741 计算机网络原理.md"
+                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
               }
             }
           },
@@ -176,7 +175,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/学科/04741 计算机网络原理/04741 计算机网络原理.md",
+                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -193,7 +192,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/学科/04741 计算机网络原理/04741 计算机网络原理.md",
+                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -228,8 +227,9 @@
   },
   "active": "59c29d640afd6679",
   "lastOpenFiles": [
-    "knowledge accumulate/学科/04741 计算机网络原理/$red.md",
+    "knowledge accumulate/前端 Frontend System/24-服务器学习/项目打包和自动化部署.md",
     "knowledge accumulate/学科/04741 计算机网络原理/04741 计算机网络原理.md",
+    "knowledge accumulate/学科/04741 计算机网络原理/$red.md",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/13-内置对象： String-字符串的常见方法.md",
     "knowledge accumulate/学科/04741 计算机网络原理",
     "knowledge accumulate/前端 Frontend System/04-JavaScript基础/16-内置对象：Array-数组简介.md",
@@ -267,7 +267,6 @@
     "未命名.canvas",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md",
     "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/nextTick.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/historyApiFallback.md",
     "knowledge accumulate/学科/Plans/attachments/Pasted image 20230222234235.png",
     "knowledge accumulate/学科/Plans/attachments/Pasted image 20230222234358.png"
   ]
