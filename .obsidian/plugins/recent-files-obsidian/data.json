@@ -1,8 +1,36 @@
 {
   "recentFiles": [
     {
+      "basename": "未命名",
+      "path": "daily note/未命名.md"
+    },
+    {
+      "basename": "04-作用域和闭包",
+      "path": "knowledge accumulate/前端 Frontend System/07-JavaScript进阶/04-作用域和闭包.md"
+    },
+    {
+      "basename": "未命名",
+      "path": "knowledge accumulate/前端 Frontend System/07-JavaScript进阶/未命名.md"
+    },
+    {
+      "basename": "03-创建对象和继承",
+      "path": "knowledge accumulate/前端 Frontend System/07-JavaScript进阶/03-创建对象和继承.md"
+    },
+    {
+      "basename": "01-数据库的基础知识",
+      "path": "knowledge accumulate/前端 Frontend System/10-MySQL数据库/01-数据库的基础知识.md"
+    },
+    {
+      "basename": "test",
+      "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/test.md"
+    },
+    {
       "basename": "云服务器中 ssh key 管理 与 github 的配置",
       "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
+    },
+    {
+      "basename": "未命名看板",
+      "path": "knowledge accumulate/前端 Frontend System/24-服务器学习/未命名看板.md"
     },
     {
       "basename": "项目打包和自动化部署",
@@ -171,22 +199,6 @@
     {
       "basename": "02331 数据结构",
       "path": "knowledge accumulate/学科/02331 数据结构/02331 数据结构.md"
-    },
-    {
-      "basename": "04735 数据库系统原理",
-      "path": "knowledge accumulate/学科/04735 数据库系统原理/04735 数据库系统原理.md"
-    },
-    {
-      "basename": "README",
-      "path": "README.md"
-    },
-    {
-      "basename": "彩色时钟",
-      "path": "88-template/彩色时钟.md"
-    },
-    {
-      "basename": "home",
-      "path": "88-template/home.md"
     }
   ],
   "omittedPaths": [],

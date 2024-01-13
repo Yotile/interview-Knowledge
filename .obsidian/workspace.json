@@ -13,29 +13,9 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
+                "file": "daily note/未命名.md",
                 "mode": "source",
                 "source": false
-              }
-            }
-          },
-          {
-            "id": "22b5b5c0701fe8e0",
-            "type": "leaf",
-            "state": {
-              "type": "release-notes",
-              "state": {
-                "currentVersion": "1.3.5"
-              }
-            }
-          },
-          {
-            "id": "06212bb098478126",
-            "type": "leaf",
-            "state": {
-              "type": "release-notes",
-              "state": {
-                "currentVersion": "1.3.7"
               }
             }
           }
@@ -138,7 +118,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md"
+                "file": "daily note/未命名.md"
               }
             }
           },
@@ -187,7 +167,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
+                "file": "daily note/未命名.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -204,7 +184,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
+                "file": "daily note/未命名.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -238,6 +218,14 @@
   },
   "active": "59c29d640afd6679",
   "lastOpenFiles": [
+    "knowledge accumulate/前端 Frontend System/07-JavaScript进阶/04-作用域和闭包.md",
+    "daily note/未命名.md",
+    "knowledge accumulate/前端 Frontend System/07-JavaScript进阶/未命名.md",
+    "knowledge accumulate/前端 Frontend System/07-JavaScript进阶/03-创建对象和继承.md",
+    "knowledge accumulate/前端 Frontend System/10-MySQL数据库/01-数据库的基础知识.md",
+    "knowledge accumulate/前端 Frontend System/24-服务器学习/test.md",
+    "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
+    "knowledge accumulate/前端 Frontend System/24-服务器学习/未命名看板.md",
     "knowledge accumulate/前端 Frontend System/24-服务器学习/项目打包和自动化部署.md",
     "knowledge accumulate/学科/04741 计算机网络原理/04741 计算机网络原理.md",
     "knowledge accumulate/学科/04741 计算机网络原理/$red.md",
@@ -267,17 +255,9 @@
     "Untitled 2.table",
     "Untitled 1.table",
     "knowledge accumulate/学科/Plans/2023 4月.md",
-    "Excalidraw/Drawing 2023-04-05 11.21.19.excalidraw.md",
-    "knowledge accumulate/前端 Frontend System/24-服务器学习/云服务器中 ssh key 管理 与 github 的配置.md",
-    "未命名看板.md",
-    "2023-04-05.md",
-    "202209241625.md",
     "未命名 2.canvas",
     "未命名 1.canvas",
-    "Excalidraw/Drawing 2023-04-05 10.39.37.excalidraw.md",
     "未命名.canvas",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/08_Vue3 Composition API.md",
-    "knowledge accumulate/前端 Frontend System/12.5-Vue 3.x/00_Vue3拓展知识/nextTick.md",
     "knowledge accumulate/学科/Plans/attachments/Pasted image 20230222234235.png",
     "knowledge accumulate/学科/Plans/attachments/Pasted image 20230222234358.png"
   ]
