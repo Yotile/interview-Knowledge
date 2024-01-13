@@ -10,7 +10,7 @@
   "showUnsupportedFiles": true,
   "attachmentFolderPath": "./attachments",
   "alwaysUpdateLinks": true,
-  "readableLineLength": false,
+  "readableLineLength": true,
   "strictLineBreaks": false,
   "spellcheck": false,
   "vimMode": false,
